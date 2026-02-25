@@ -1,0 +1,603 @@
+package com.phonepclink.windows
+
+import javafx.application.Platform
+import javafx.geometry.Insets
+import javafx.scene.control.*
+import javafx.scene.layout.BorderPane
+import javafx.scene.layout.HBox
+import javafx.stage.FileChooser
+import javafx.geometry.Pos
+import javafx.scene.layout.*
+import javafx.scene.paint.Color
+import javafx.geometry.Side
+import javafx.scene.input.KeyCode
+import javafx.scene.text.Text
+import javafx.scene.text.TextFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.nio.file.Paths
+
+import java.awt.Desktop
+import java.io.File
+import java.util.*
+
+class FileExplorer(private val connectionManager: ConnectionManager) {
+
+    private val chatListView = ListView<ChatMessage>()
+    private val messageInput = TextField()
+    private val sendButton = Button("➤") // אפשר להחליף באייקון
+    private val attachButton = Button("+")
+
+    // מנהלים
+    private val historyManager = HistoryManager()
+    private val scope = CoroutineScope(Dispatchers.Default + Job())
+
+    init {
+        setupChatLayout()
+        loadHistory()
+
+        // ✅ חיבור ל-ConnectionManager: האזנה להודעות נכנסות
+        connectionManager.onChatMessageReceived = { msg ->
+            Platform.runLater {
+                chatListView.items.add(msg)
+                chatListView.scrollTo(chatListView.items.size - 1)
+                // שומרים גם הודעות נכנסות בהיסטוריה
+                historyManager.saveMessage(msg)
+            }
+        }
+
+        // הגדרת פעולות כפתורים
+        sendButton.setOnAction { sendMessage() }
+        messageInput.setOnKeyPressed { if (it.code == KeyCode.ENTER) sendMessage() }
+        attachButton.setOnAction { showAttachMenu() }
+    }
+
+    fun getView(): BorderPane {
+        val root = BorderPane()
+        root.style = "-fx-background-color: #FFFFFF;"
+
+        // 1. רשימת הצ'אט (מרכז)
+        root.center = chatListView
+
+        // 2. אזור הכתיבה (למטה)
+        val bottomBar = HBox(10.0).apply {
+            padding = Insets(10.0, 15.0, 10.0, 15.0)
+            alignment = Pos.CENTER
+            style = "-fx-background-color: #F2F2F2; -fx-border-color: #E0E0E0; -fx-border-width: 1 0 0 0;"
+
+            // עיצוב כפתור הפלוס
+            attachButton.style = """
+                -fx-background-color: transparent; 
+                -fx-font-size: 24px; 
+                -fx-text-fill: #555; 
+                -fx-cursor: hand;
+            """.trimIndent()
+
+            // עיצוב שדה הטקסט (עגול)
+            messageInput.promptText = "הזן הודעה..."
+            messageInput.style = """
+                -fx-background-color: white; 
+                -fx-background-radius: 20; 
+                -fx-border-radius: 20; 
+                -fx-border-color: #DDD; 
+                -fx-padding: 8 15 8 15;
+            """.trimIndent()
+
+            // עיצוב כפתור השליחה
+            sendButton.style = """
+                -fx-background-color: transparent; 
+                -fx-text-fill: #0078D7; 
+                -fx-font-size: 20px; 
+                -fx-cursor: hand;
+            """.trimIndent()
+
+            children.addAll(attachButton, messageInput.apply { HBox.setHgrow(this, Priority.ALWAYS) }, sendButton)
+        }
+        root.bottom = bottomBar
+
+        return root
+    }
+
+    private fun setupChatLayout() {
+        chatListView.setCellFactory {
+            object : ListCell<ChatMessage>() {
+                override fun updateItem(item: ChatMessage?, empty: Boolean) {
+                    super.updateItem(item, empty)
+                    if (empty || item == null) {
+                        graphic = null
+                        style = "-fx-background-color: transparent;"
+                    } else {
+                        val vbox = VBox(5.0)
+                        vbox.alignment = Pos.CENTER
+
+                        // ✅ פתרון לבעיה 8: הפרדת ימים
+                        val index = index
+                        var showDate = false
+                        if (index == 0) showDate = true
+                        else if (index > 0 && index < chatListView.items.size) {
+                            val prev = chatListView.items[index - 1]
+                            val fmt = SimpleDateFormat("yyyyMMdd")
+                            if (fmt.format(Date(prev.timestamp)) != fmt.format(Date(item.timestamp))) {
+                                showDate = true
+                            }
+                        }
+
+                        if (showDate) {
+                            val dateLbl = Label(SimpleDateFormat("EEEE, d MMMM yyyy").format(Date(item.timestamp)))
+                            dateLbl.style = "-fx-font-size: 11px; -fx-text-fill: gray; -fx-padding: 5;"
+                            vbox.children.add(dateLbl)
+                        }
+
+                        // הבועה עצמה
+                        val bubble = createBubble(item)
+                        val alignBox = HBox(bubble)
+                        alignBox.alignment = if (item.isIncoming) Pos.CENTER_LEFT else Pos.CENTER_RIGHT
+
+                        vbox.children.add(alignBox)
+                        graphic = vbox
+                        style = "-fx-background-color: transparent; -fx-padding: 5 10 5 10;"
+//                        graphic = createBubble(item)
+//                        // הסרת ריפוד של ה-ListView עצמו
+//                        style = "-fx-background-color: transparent; -fx-padding: 5 10 5 10;"
+//                        alignment = if (item.isIncoming) Pos.CENTER_LEFT else Pos.CENTER_RIGHT
+                    }
+                }
+            }
+        }
+
+        // הסרת קווים ורקע
+        chatListView.style = "-fx-background-color: white; -fx-control-inner-background: white;"
+    }
+
+    // יצירת הבועה (כחול לימין, אפור לשמאל)
+    private fun createBubble(msg: ChatMessage): VBox {
+        val isMe = !msg.isIncoming // אני (המחשב) = לא נכנס
+
+        val bubble = VBox(4.0).apply {
+            padding = Insets(10.0, 14.0, 10.0, 14.0)
+            maxWidth = 350.0
+
+            style = if (isMe) {
+                // עיצוב שלי (מחשב) - כחול
+                """
+                -fx-background-color: #0078D7; 
+                -fx-background-radius: 18 18 2 18; 
+                -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 2, 0, 0, 1);
+                """.trimIndent()
+            } else {
+                // עיצוב שלו (טלפון) - אפור בהיר
+                """
+                -fx-background-color: #F2F2F2; 
+                -fx-background-radius: 18 18 18 2;
+                """.trimIndent()
+            }
+        }
+
+        // תוכן ההודעה
+        if (msg.type == MessageType.TEXT) {
+            val text = Text(msg.text ?: "")
+            text.fill = if (isMe) Color.WHITE else Color.BLACK
+            text.style = "-fx-font-size: 14px;"
+            val flow = TextFlow(text)
+            bubble.children.add(flow)
+        } else {
+            // קובץ / תמונה
+            val fileBox = HBox(10.0).apply { alignment = Pos.CENTER_LEFT }
+            val icon = Label(getEmojiForType(msg.type)).apply {
+                style = "-fx-font-size: 24px;"
+            }
+
+            val infoBox = VBox(2.0).apply {
+                val nameLbl = Label(msg.fileName).apply {
+                    style = "-fx-font-weight: bold; -fx-font-size: 13px;"
+                    textFill = if (isMe) Color.WHITE else Color.BLACK
+                }
+                val sizeLbl = Label(msg.sizeStr).apply {
+                    style = "-fx-font-size: 11px;"
+                    textFill = if (isMe) Color.rgb(220, 220, 220) else Color.GRAY
+                }
+                children.addAll(nameLbl, sizeLbl)
+            }
+
+            fileBox.children.addAll(icon, infoBox)
+            bubble.children.add(fileBox)
+
+            // ✅ פתרון לבעיה 1: כפתורי פתיחה ושמירה
+            val btnBox = HBox(10.0).apply {
+                alignment = Pos.CENTER
+                padding = Insets(5.0, 0.0, 0.0, 0.0)
+            }
+
+            val openBtn = Button("Open").apply {
+                style = "-fx-font-size: 10px; -fx-background-radius: 5; -fx-cursor: hand;"
+                setOnAction {
+                    val path = msg.filePath ?: return@setOnAction
+                    try {
+                        Desktop.getDesktop().open(File(path))
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+
+            val saveBtn = Button("Save As").apply {
+                style = "-fx-font-size: 10px; -fx-background-radius: 5; -fx-cursor: hand;"
+
+                setOnAction {
+                    val originalName = msg.fileName ?: "file_${System.currentTimeMillis()}"
+                    val chooser = FileChooser().apply { initialFileName = msg.fileName }
+                    val dest = chooser.showSaveDialog(chatListView.scene.window) ?: return@setOnAction
+
+                    try {
+                        var finalDest = dest
+
+                        // ✅ אם המשתמש מחק סיומת – מחזירים אותה אוטומטית
+                        if (!finalDest.name.contains(".") && originalName.contains(".")) {
+                            val ext = originalName.substringAfterLast(".")
+
+//                        if (!finalDest.name.contains(".") && msg.fileName.contains(".")) {
+//                            val ext = msg.fileName.substringAfterLast(".")
+                            finalDest = File(finalDest.parentFile, "${finalDest.name}.$ext")
+                        }
+                        val local = msg.filePath?.let { File(it) }
+
+                        // ✅ אם יש קובץ מקומי והוא קיים – העתקה רגילה
+                        if (local != null && local.exists()) {
+                            local.copyTo(finalDest, overwrite = true)
+                            println("Saved locally: ${finalDest.absolutePath}")
+                            return@setOnAction
+                        }
+
+                        // ✅ אחרת – הורדה מחדש מהטלפון ושמירה ליעד
+                        val remote = msg.remotePath
+                        if (remote.isNullOrBlank()) {
+                            println("No local file and no remotePath to download")
+                            return@setOnAction
+                        }
+
+                        // ✅ להוריד ברקע כדי לא לתקוע UI
+                        scope.launch {
+                            try {
+                                val bytes = connectionManager.downloadFile(remote)
+                                if (bytes != null) {
+                                    finalDest.writeBytes(bytes)
+                                    println("Saved by re-download: ${finalDest.absolutePath}")
+                                } else {
+                                    println("Failed to re-download for saving. remotePath=$remote")
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+
+//            if (msg.filePath != null) {
+//                        val chooser = FileChooser()
+//                        chooser.initialFileName = msg.fileName
+//                        val dest = chooser.showSaveDialog(chatListView.scene.window)
+//                        if (dest != null) {
+//                            File(msg.filePath).copyTo(dest, overwrite = true)
+//                        }
+//                    }
+//                }
+//            }
+            btnBox.children.addAll(openBtn, saveBtn)
+            bubble.children.add(btnBox)
+        }
+
+//            // לחיצה להורדה
+//            bubble.setOnMouseClicked {
+//                if (msg.isIncoming) downloadFile(msg)
+//            }
+//            bubble.style += "-fx-cursor: hand;"
+//        }
+
+        // שעה
+        val timeLbl = Label(msg.timeStr).apply {
+            style = "-fx-font-size: 10px;"
+            textFill = if (isMe) Color.rgb(220, 220, 220) else Color.GRAY
+            alignment = Pos.BOTTOM_RIGHT
+            maxWidth = Double.MAX_VALUE
+        }
+
+        return VBox(2.0).apply {
+            children.addAll(bubble, timeLbl)
+        }
+    }
+
+//        // עוטף את הבועה + השעה
+//        val container = VBox(2.0).apply {
+//            children.addAll(bubble, timeLbl)
+//            alignment = if (isMe) Pos.CENTER_RIGHT else Pos.CENTER_LEFT
+//        }
+//
+//        return container
+//
+
+    private fun showAttachMenu() {
+        val menu = ContextMenu()
+
+        val items = listOf(
+            "🖼️ תמונה" to "*.png,*.jpg,*.jpeg,*.gif",
+            "🎬 וידאו" to "*.mp4,*.avi,*.mkv,*.mov",
+            "🎵 שמע" to "*.mp3,*.wav,*.aac",
+            "📁 קובץ" to "*.*"
+        )
+
+        items.forEach { (label, ext) ->
+            val menuItem = MenuItem(label)
+            menuItem.style = "-fx-font-size: 14px; -fx-padding: 5 10 5 10;"
+            menuItem.setOnAction { chooseAndSendFile(ext, getTypeFromExt(label)) }
+            menu.items.add(menuItem)
+        }
+
+        menu.show(attachButton, Side.TOP, 0.0, 0.0)
+    }
+
+    private fun getTypeFromExt(label: String): MessageType {
+        return when {
+            label.contains("תמונה") -> MessageType.IMAGE
+            label.contains("וידאו") -> MessageType.VIDEO
+            label.contains("שמע") -> MessageType.AUDIO
+            else -> MessageType.FILE
+        }
+    }
+
+    private fun sendMessage() {
+        val text = messageInput.text.trim()
+        if (text.isEmpty()) return
+        // 1. יצירת הודעה
+        val msg = ChatMessage(text = text, isIncoming = false, type = MessageType.TEXT)
+        // 2. שמירה והוספה למסך
+        addMessageToChat(msg)
+        // 3. ניקוי שדה
+        messageInput.clear()
+        // 4. שליחה לטלפון (לוגיקה עתידית)
+        connectionManager.sendChatMessage(msg)
+    }
+
+    private fun chooseAndSendFile(extensions: String, type: MessageType) {
+        val chooser = FileChooser()
+        // ✅ תיקיית פתיחה לפי סוג
+        chooser.initialDirectory = getDefaultDir(type)
+        // ✅ פילטר לפי סיומות (לתקן פיצול)
+        if (extensions != "*.*") {
+            // הופך את המחרוזת "*.jpg;*.png" לרשימה
+            val extList = extensions.split(",").map { it.trim() }
+            chooser.extensionFilters.add(FileChooser.ExtensionFilter("Files", extList))
+        } else {
+            chooser.extensionFilters.add(FileChooser.ExtensionFilter("All Files", "*.*"))
+        }
+
+        val file = chooser.showOpenDialog(chatListView.scene.window) ?: return
+        // יצירת הודעת קובץ יוצאת
+        val msg = ChatMessage(
+            filePath = file.absolutePath,
+            fileName = file.name,
+            fileSize = file.length(),
+            type = type,
+            isIncoming = false
+        )
+
+        addMessageToChat(msg)
+
+        // 2. ✅ ביצוע השליחה האמיתית ברקע
+        scope.launch {
+            connectionManager.uploadFile(file, type)
+        }
+    }
+
+    private fun getDefaultDir(type: MessageType): File {
+        val home = System.getProperty("user.home")
+
+        // ספריות “סטנדרטיות” ב-Windows
+        val dir = when (type) {
+            MessageType.IMAGE -> Paths.get(home, "Pictures").toFile()
+            MessageType.VIDEO -> Paths.get(home, "Videos").toFile()
+            MessageType.AUDIO -> Paths.get(home, "Music").toFile()
+            else -> Paths.get(home, "Documents").toFile()
+        }
+
+        // אם לא קיימת (מקרים נדירים) – ניפול ל-home
+        return if (dir.exists() && dir.isDirectory) dir else File(home)
+    }
+
+    private fun addMessageToChat(msg: ChatMessage) {
+        Platform.runLater {
+            chatListView.items.add(msg)
+            chatListView.scrollTo(chatListView.items.size - 1)
+        }
+        // שמירה להיסטוריה
+        historyManager.saveMessage(msg)
+    }
+
+    private fun loadHistory() {
+        val history = historyManager.loadHistory()
+        Platform.runLater {
+            chatListView.items.addAll(history)
+            if (history.isNotEmpty()) chatListView.scrollTo(history.size - 1)
+        }
+    }
+
+//    private fun downloadFile(msg: ChatMessage) {
+//        val fileChooser = FileChooser().apply { initialFileName = msg.fileName }
+//        val saveFile = fileChooser.showSaveDialog(chatListView.scene.window) ?: return
+//
+//        scope.launch {
+//            // הוריד מהטלפון
+//            val data = connectionManager.downloadFile(msg.filePath!!) // הנחה שהנתיב נשמר
+//            if (data != null) {
+//                FileOutputStream(saveFile).use { it.write(data) }
+//            }
+//        }
+//    }
+
+    private fun getEmojiForType(type: MessageType) = when (type) {
+        MessageType.IMAGE -> "🖼️"
+        MessageType.VIDEO -> "🎬"
+        MessageType.AUDIO -> "🎵"
+        else -> "📄"
+    }
+}
+
+//class FileExplorer(private val connectionManager: ConnectionManager) {
+//    private val tableView = TableView<FileItem>()
+//    private val statusLabel = Label("Not connected")
+//    private val refreshButton = Button("Refresh")
+//    private val downloadButton = Button("Download Selected")
+//    private val scope = CoroutineScope(Dispatchers.Default)
+//
+//    init {
+//        setupTable()
+//
+//        refreshButton.setOnAction {
+//            loadFiles()
+//        }
+//
+//        downloadButton.setOnAction {
+//            downloadSelected()
+//        }
+//
+//        downloadButton.isDisable = true
+//    }
+//
+//    fun getView(): BorderPane {
+//        val root = BorderPane()
+//
+//        // Top bar
+//        val topBar = HBox(10.0)
+//        topBar.padding = Insets(10.0)
+//        topBar.children.addAll(refreshButton, downloadButton, statusLabel)
+//        root.top = topBar
+//
+//        // Center - File table
+//        root.center = tableView
+//
+//        return root
+//    }
+//
+//    private fun setupTable() {
+//        val nameColumn = TableColumn<FileItem, String>("Name")
+//        nameColumn.cellValueFactory = PropertyValueFactory("name")
+//        nameColumn.prefWidth = 300.0
+//
+//        val sizeColumn = TableColumn<FileItem, String>("Size")
+//        sizeColumn.cellValueFactory = PropertyValueFactory("sizeStr")
+//        sizeColumn.prefWidth = 100.0
+//
+//        val typeColumn = TableColumn<FileItem, String>("Type")
+//        typeColumn.cellValueFactory = PropertyValueFactory("type")
+//        typeColumn.prefWidth = 150.0
+//
+//        val pathColumn = TableColumn<FileItem, String>("Path")
+//        pathColumn.cellValueFactory = PropertyValueFactory("path")
+//        pathColumn.prefWidth = 400.0
+//
+//        tableView.columns.addAll(nameColumn, sizeColumn, typeColumn, pathColumn)
+//
+//        tableView.selectionModel.selectedItemProperty().addListener { _, _, newValue ->
+//            downloadButton.isDisable = newValue == null
+//        }
+//    }
+//
+//    private fun loadFiles() {
+//        if (!connectionManager.isConnected()) {
+//            Platform.runLater {
+//                statusLabel.text = "Please connect to phone first"
+//            }
+//            return
+//        }
+//
+//        Platform.runLater {
+//            statusLabel.text = "Loading files..."
+//        }
+//
+//        scope.launch {
+//            try {
+//                val jsonStr = connectionManager.fetchFileList()
+//                if (jsonStr != null) {
+//                    val jsonArray = JSONArray(jsonStr)
+//                    val fileItems = mutableListOf<FileItem>()
+//
+//                    for (i in 0 until jsonArray.length()) {
+//                        val obj = jsonArray.getJSONObject(i)
+//                        val fileItem = FileItem(
+//                            name = obj.getString("name"),
+//                            path = obj.getString("path"),
+//                            size = obj.getLong("size"),
+//                            type = obj.getString("type")
+//                        )
+//                        fileItems.add(fileItem)
+//                    }
+//
+//                    Platform.runLater {
+//                        tableView.items.clear()
+//                        tableView.items.addAll(fileItems)
+//                        statusLabel.text = "Loaded ${fileItems.size} files"
+//                    }
+//                } else {
+//                    Platform.runLater {
+//                        statusLabel.text = "Failed to load files"
+//                    }
+//                }
+//            } catch (e: Exception) {
+//                println("Error loading files: ${e.message}")
+//                Platform.runLater {
+//                    statusLabel.text = "Error: ${e.message}"
+//                }
+//            }
+//        }
+//    }
+//
+//    private fun downloadSelected() {
+//        val selected = tableView.selectionModel.selectedItem ?: return
+//
+//        val fileChooser = FileChooser()
+//        fileChooser.title = "Save File"
+//        fileChooser.initialFileName = selected.name
+//
+//        val saveFile = fileChooser.showSaveDialog(tableView.scene.window) ?: return
+//
+//        Platform.runLater {
+//            statusLabel.text = "Downloading ${selected.name}..."
+//        }
+//
+//        scope.launch {
+//            try {
+//                val fileData = connectionManager.downloadFile(selected.path)
+//                if (fileData != null) {
+//                    FileOutputStream(saveFile).use { fos ->
+//                        fos.write(fileData)
+//                    }
+//
+//                    Platform.runLater {
+//                        statusLabel.text = "Downloaded: ${saveFile.absolutePath}"
+//                    }
+//                } else {
+//                    Platform.runLater {
+//                        statusLabel.text = "Failed to download file"
+//                    }
+//                }
+//            } catch (e: Exception) {
+//                println("Error downloading file: ${e.message}")
+//                Platform.runLater {
+//                    statusLabel.text = "Error: ${e.message}"
+//                }
+//            }
+//        }
+//    }
+//
+//    fun cleanup() {
+//        scope.cancel()
+//    }
+//}
+//
+
