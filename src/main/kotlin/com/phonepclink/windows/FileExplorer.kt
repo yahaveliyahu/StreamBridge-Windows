@@ -13,6 +13,8 @@ import javafx.geometry.Side
 import javafx.scene.input.KeyCode
 import javafx.scene.text.Text
 import javafx.scene.text.TextFlow
+import javafx.scene.image.Image
+import javafx.scene.image.ImageView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,10 +30,10 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 
     private val chatListView = ListView<ChatMessage>()
     private val messageInput = TextField()
-    private val sendButton = Button("➤") // אפשר להחליף באייקון
+    private val sendButton = Button("➤")
     private val attachButton = Button("+")
 
-    // מנהלים
+    // Managers
     private val historyManager = HistoryManager()
     private val scope = CoroutineScope(Dispatchers.Default + Job())
 
@@ -39,17 +41,21 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         setupChatLayout()
         loadHistory()
 
-        // ✅ חיבור ל-ConnectionManager: האזנה להודעות נכנסות
+        // Clean old messages on app start
+        historyManager.cleanOldMessages()
+        println("Chat history cleaned on startup")
+
+        // Connecting to ConnectionManager: Listening for incoming messages
         connectionManager.onChatMessageReceived = { msg ->
             Platform.runLater {
                 chatListView.items.add(msg)
                 chatListView.scrollTo(chatListView.items.size - 1)
-                // שומרים גם הודעות נכנסות בהיסטוריה
+                // Also saves incoming messages in history
                 historyManager.saveMessage(msg)
             }
         }
 
-        // הגדרת פעולות כפתורים
+        // Setting button actions
         sendButton.setOnAction { sendMessage() }
         messageInput.setOnKeyPressed { if (it.code == KeyCode.ENTER) sendMessage() }
         attachButton.setOnAction { showAttachMenu() }
@@ -59,16 +65,16 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         val root = BorderPane()
         root.style = "-fx-background-color: #FFFFFF;"
 
-        // 1. רשימת הצ'אט (מרכז)
+        // Chat list (center)
         root.center = chatListView
 
-        // 2. אזור הכתיבה (למטה)
+        // Writing area (bottom)
         val bottomBar = HBox(10.0).apply {
             padding = Insets(10.0, 15.0, 10.0, 15.0)
             alignment = Pos.CENTER
             style = "-fx-background-color: #F2F2F2; -fx-border-color: #E0E0E0; -fx-border-width: 1 0 0 0;"
 
-            // עיצוב כפתור הפלוס
+            // Plus button design
             attachButton.style = """
                 -fx-background-color: transparent; 
                 -fx-font-size: 24px; 
@@ -76,8 +82,8 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 -fx-cursor: hand;
             """.trimIndent()
 
-            // עיצוב שדה הטקסט (עגול)
-            messageInput.promptText = "הזן הודעה..."
+            // Text field formatting (round)
+            messageInput.promptText = "Enter a message..."
             messageInput.style = """
                 -fx-background-color: white; 
                 -fx-background-radius: 20; 
@@ -86,7 +92,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 -fx-padding: 8 15 8 15;
             """.trimIndent()
 
-            // עיצוב כפתור השליחה
+            // Submit button design
             sendButton.style = """
                 -fx-background-color: transparent; 
                 -fx-text-fill: #0078D7; 
@@ -113,7 +119,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                         val vbox = VBox(5.0)
                         vbox.alignment = Pos.CENTER
 
-                        // ✅ פתרון לבעיה 8: הפרדת ימים
+                        // Separation of days
                         val index = index
                         var showDate = false
                         if (index == 0) showDate = true
@@ -131,7 +137,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                             vbox.children.add(dateLbl)
                         }
 
-                        // הבועה עצמה
+                        // The bubble itself
                         val bubble = createBubble(item)
                         val alignBox = HBox(bubble)
                         alignBox.alignment = if (item.isIncoming) Pos.CENTER_LEFT else Pos.CENTER_RIGHT
@@ -140,7 +146,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                         graphic = vbox
                         style = "-fx-background-color: transparent; -fx-padding: 5 10 5 10;"
 //                        graphic = createBubble(item)
-//                        // הסרת ריפוד של ה-ListView עצמו
 //                        style = "-fx-background-color: transparent; -fx-padding: 5 10 5 10;"
 //                        alignment = if (item.isIncoming) Pos.CENTER_LEFT else Pos.CENTER_RIGHT
                     }
@@ -148,27 +153,27 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             }
         }
 
-        // הסרת קווים ורקע
+        // Removing lines and background
         chatListView.style = "-fx-background-color: white; -fx-control-inner-background: white;"
     }
 
-    // יצירת הבועה (כחול לימין, אפור לשמאל)
+    // Creating the bubble (blue to the right, gray to the left)
     private fun createBubble(msg: ChatMessage): VBox {
-        val isMe = !msg.isIncoming // אני (המחשב) = לא נכנס
+        val isMe = !msg.isIncoming // I (the computer) = not logged in
 
         val bubble = VBox(4.0).apply {
             padding = Insets(10.0, 14.0, 10.0, 14.0)
             maxWidth = 350.0
 
             style = if (isMe) {
-                // עיצוב שלי (מחשב) - כחול
+                // My design (computer) - blue
                 """
                 -fx-background-color: #0078D7; 
                 -fx-background-radius: 18 18 2 18; 
                 -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 2, 0, 0, 1);
                 """.trimIndent()
             } else {
-                // עיצוב שלו (טלפון) - אפור בהיר
+                // His design (phone) - light gray
                 """
                 -fx-background-color: #F2F2F2; 
                 -fx-background-radius: 18 18 18 2;
@@ -176,7 +181,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             }
         }
 
-        // תוכן ההודעה
+        // Message content
         if (msg.type == MessageType.TEXT) {
             val text = Text(msg.text ?: "")
             text.fill = if (isMe) Color.WHITE else Color.BLACK
@@ -184,11 +189,23 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             val flow = TextFlow(text)
             bubble.children.add(flow)
         } else {
-            // קובץ / תמונה
+            // File/Image
             val fileBox = HBox(10.0).apply { alignment = Pos.CENTER_LEFT }
-            val icon = Label(getEmojiForType(msg.type)).apply {
-                style = "-fx-font-size: 24px;"
+
+            // IMAGE PREVIEW: Show actual image thumbnail for image files
+            val thumbnail: javafx.scene.Node = if (isImageFile(msg.fileName) && msg.filePath != null) {
+                // Create image preview
+                createImageThumbnail(msg.filePath)
+            } else {
+                // Show emoji icon for non-images
+                Label(getEmojiForType(msg.type)).apply {
+                    style = "-fx-font-size: 24px;"
+                }
             }
+
+//            val icon = Label(getEmojiForType(msg.type)).apply {
+//                style = "-fx-font-size: 24px;"
+//            }
 
             val infoBox = VBox(2.0).apply {
                 val nameLbl = Label(msg.fileName).apply {
@@ -202,10 +219,10 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 children.addAll(nameLbl, sizeLbl)
             }
 
-            fileBox.children.addAll(icon, infoBox)
+            fileBox.children.addAll(thumbnail, infoBox)
             bubble.children.add(fileBox)
 
-            // ✅ פתרון לבעיה 1: כפתורי פתיחה ושמירה
+            // Open and save buttons
             val btnBox = HBox(10.0).apply {
                 alignment = Pos.CENTER
                 padding = Insets(5.0, 0.0, 0.0, 0.0)
@@ -234,7 +251,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                     try {
                         var finalDest = dest
 
-                        // ✅ אם המשתמש מחק סיומת – מחזירים אותה אוטומטית
+                        // If the user deletes an extension – it is automatically restored.
                         if (!finalDest.name.contains(".") && originalName.contains(".")) {
                             val ext = originalName.substringAfterLast(".")
 
@@ -244,21 +261,21 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                         }
                         val local = msg.filePath?.let { File(it) }
 
-                        // ✅ אם יש קובץ מקומי והוא קיים – העתקה רגילה
+                        // If there is a local file and it exists – normal copy
                         if (local != null && local.exists()) {
                             local.copyTo(finalDest, overwrite = true)
                             println("Saved locally: ${finalDest.absolutePath}")
                             return@setOnAction
                         }
 
-                        // ✅ אחרת – הורדה מחדש מהטלפון ושמירה ליעד
+                        // Otherwise – re-download from the phone and save to the destination
                         val remote = msg.remotePath
                         if (remote.isNullOrBlank()) {
                             println("No local file and no remotePath to download")
                             return@setOnAction
                         }
 
-                        // ✅ להוריד ברקע כדי לא לתקוע UI
+                        // Download in the background to avoid UI crashes
                         scope.launch {
                             try {
                                 val bytes = connectionManager.downloadFile(remote)
@@ -293,14 +310,13 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             bubble.children.add(btnBox)
         }
 
-//            // לחיצה להורדה
 //            bubble.setOnMouseClicked {
 //                if (msg.isIncoming) downloadFile(msg)
 //            }
 //            bubble.style += "-fx-cursor: hand;"
 //        }
 
-        // שעה
+        // time
         val timeLbl = Label(msg.timeStr).apply {
             style = "-fx-font-size: 10px;"
             textFill = if (isMe) Color.rgb(220, 220, 220) else Color.GRAY
@@ -313,12 +329,54 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         }
     }
 
-//        // עוטף את הבועה + השעה
+    // Helper function to detect image files
+    private fun isImageFile(fileName: String?): Boolean {
+        if (fileName == null) return false
+        val imageExtensions = listOf("jpg", "jpeg", "png", "gif", "bmp", "webp")
+        val extension = fileName.substringAfterLast('.', "").lowercase()
+        return extension in imageExtensions
+    }
+
+    // Create image thumbnail for preview
+    private fun createImageThumbnail(filePath: String): javafx.scene.Node {
+        return try {
+            val file = File(filePath)
+            if (!file.exists()) {
+                // File doesn't exist, return placeholder
+                return Label("🖼️").apply {
+                    style = "-fx-font-size: 24px;"
+                    minWidth = 80.0
+                    minHeight = 80.0
+                    alignment = Pos.CENTER
+                }
+            }
+
+            // Load image
+            val image = Image(file.toURI().toString(), 80.0, 80.0, true, true, true)
+
+            ImageView(image).apply {
+                fitWidth = 80.0
+                fitHeight = 80.0
+                isPreserveRatio = true
+                isSmooth = true
+                style = "-fx-background-radius: 8; -fx-border-radius: 8; -fx-border-color: rgba(0,0,0,0.1); -fx-border-width: 1;"
+            }
+        } catch (e: Exception) {
+            println("Error loading image thumbnail: ${e.message}")
+            // Fallback to icon on error
+            Label("🖼️").apply {
+                style = "-fx-font-size: 24px;"
+                minWidth = 80.0
+                minHeight = 80.0
+                alignment = Pos.CENTER
+            }
+        }
+    }
+
 //        val container = VBox(2.0).apply {
 //            children.addAll(bubble, timeLbl)
 //            alignment = if (isMe) Pos.CENTER_RIGHT else Pos.CENTER_LEFT
 //        }
-//
 //        return container
 //
 
@@ -354,23 +412,23 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
     private fun sendMessage() {
         val text = messageInput.text.trim()
         if (text.isEmpty()) return
-        // 1. יצירת הודעה
+        // Create a message
         val msg = ChatMessage(text = text, isIncoming = false, type = MessageType.TEXT)
-        // 2. שמירה והוספה למסך
+        // Save and add to screen
         addMessageToChat(msg)
-        // 3. ניקוי שדה
+        // Field cleaning
         messageInput.clear()
-        // 4. שליחה לטלפון (לוגיקה עתידית)
+        // Send to phone (future logic)
         connectionManager.sendChatMessage(msg)
     }
 
     private fun chooseAndSendFile(extensions: String, type: MessageType) {
         val chooser = FileChooser()
-        // ✅ תיקיית פתיחה לפי סוג
+        // Opening folder by type
         chooser.initialDirectory = getDefaultDir(type)
-        // ✅ פילטר לפי סיומות (לתקן פיצול)
+        // Filter by suffixes (fix splitting)
         if (extensions != "*.*") {
-            // הופך את המחרוזת "*.jpg;*.png" לרשימה
+            // Converts the string "*.jpg;*.png" to a list
             val extList = extensions.split(",").map { it.trim() }
             chooser.extensionFilters.add(FileChooser.ExtensionFilter("Files", extList))
         } else {
@@ -378,7 +436,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         }
 
         val file = chooser.showOpenDialog(chatListView.scene.window) ?: return
-        // יצירת הודעת קובץ יוצאת
+        // Create an outgoing file message
         val msg = ChatMessage(
             filePath = file.absolutePath,
             fileName = file.name,
@@ -389,7 +447,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 
         addMessageToChat(msg)
 
-        // 2. ✅ ביצוע השליחה האמיתית ברקע
+        // Performing the actual sending in the background
         scope.launch {
             connectionManager.uploadFile(file, type)
         }
@@ -398,7 +456,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
     private fun getDefaultDir(type: MessageType): File {
         val home = System.getProperty("user.home")
 
-        // ספריות “סטנדרטיות” ב-Windows
+        // “Standard” libraries in Windows
         val dir = when (type) {
             MessageType.IMAGE -> Paths.get(home, "Pictures").toFile()
             MessageType.VIDEO -> Paths.get(home, "Videos").toFile()
@@ -406,7 +464,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             else -> Paths.get(home, "Documents").toFile()
         }
 
-        // אם לא קיימת (מקרים נדירים) – ניפול ל-home
+        // If it does not exist (rare cases) – we will fall to home
         return if (dir.exists() && dir.isDirectory) dir else File(home)
     }
 
@@ -415,7 +473,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             chatListView.items.add(msg)
             chatListView.scrollTo(chatListView.items.size - 1)
         }
-        // שמירה להיסטוריה
+        // Saving for history
         historyManager.saveMessage(msg)
     }
 
@@ -432,7 +490,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 //        val saveFile = fileChooser.showSaveDialog(chatListView.scene.window) ?: return
 //
 //        scope.launch {
-//            // הוריד מהטלפון
 //            val data = connectionManager.downloadFile(msg.filePath!!) // הנחה שהנתיב נשמר
 //            if (data != null) {
 //                FileOutputStream(saveFile).use { it.write(data) }

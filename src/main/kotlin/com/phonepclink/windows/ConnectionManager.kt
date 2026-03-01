@@ -18,16 +18,16 @@ class ConnectionManager {
     private var phoneIP: String = ""
     private var webSocketClient: WebSocketClient? = null
 
-    // לקוח HTTP להורדת קבצים
+    // HTTP client for downloading files
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
         .build()
 
-    // Callbacks - פונקציות שיופעלו כשקורים דברים
+    // Callbacks - functions that will be triggered when things happen
     var onConnectionChanged: ((Boolean) -> Unit)? = null
-    var onChatMessageReceived: ((ChatMessage) -> Unit)? = null // ✅ קבלת הודעה חדשה
+    var onChatMessageReceived: ((ChatMessage) -> Unit)? = null // Receive a new message
 
     private var isConnected = false
 
@@ -48,13 +48,13 @@ class ConnectionManager {
 
     private fun connectWebSocket() {
         try {
-            val uri = URI("ws://$phoneIP:8081") // חיבור לפורט ה-WebSocket של הטלפון
+            val uri = URI("ws://$phoneIP:8081") // Connecting to the phone's WebSocket port
 
             webSocketClient = object : WebSocketClient(uri) {
                 override fun onOpen(handshakedata: ServerHandshake?) {
                     println("WebSocket connected")
                     isConnected = true
-                    // ✅ החזרת שם המחשב האמיתי (DESKTOP-XXXX)
+                    // Returning the real computer name (DESKTOP-XXXX)
                     val pcName = try { InetAddress.getLocalHost().hostName } catch (e:Exception) { "PC" }
                     val json = JSONObject().apply {
                         put("type", "HANDSHAKE")
@@ -74,13 +74,13 @@ class ConnectionManager {
                                 val timestamp = json.optLong("timestamp", System.currentTimeMillis())
 
                                 if (msgType == "FILE_TRANSFER") {
-                                    // ✅ תיקון קריטי: פתיחת תהליך חדש (Thread) להורדה
-                                    // זה מונע מהתקשורת להיתקע ולהתנתק בזמן הורדת קובץ גדול
+                                    // Opening a new process (Thread) for downloading
+                                    // This prevents communication from getting stuck and disconnected while downloading a large file
                                     Thread {
                                         handleIncomingFile(json)
                                     }.start()
                                 } else if (msgType == "TEXT") {
-                                    // הודעת טקסט רגילה - מטפלים בה מיד
+                                    // Regular text message - handled immediately
                                     val msg = ChatMessage(
                                         text = json.optString("text", ""),
                                         type = MessageType.TEXT,
@@ -100,7 +100,6 @@ class ConnectionManager {
 //                override fun onMessage(message: String?) {
 //                    message?.let {
 //                        try {
-//                            // מנסים להבין אם זו הודעת צ'אט
 //                            if (it.trim().startsWith("{")) {
 //                                val json = JSONObject(it)
 //                                val msgTypeStr = json.optString("type", "TEXT")
@@ -111,11 +110,9 @@ class ConnectionManager {
 //                                    val size = json.getLong("fileSize")
 //                                    val mime = json.optString("mimeType", "application/octet-stream")
 //
-//                                    // 1. הורדת הקובץ (עכשיו הפונקציה קיימת למטה!)
 //                                    val downloadedBytes = downloadFile(downloadPath)
 //
 //                                    if (downloadedBytes != null) {
-//                                        // 2. שמירה בתיקיית ההורדות
 //                                        val downloadsDir = File(System.getProperty("user.home"), "Downloads/StreamBridge")
 //                                        if (!downloadsDir.exists()) downloadsDir.mkdirs()
 //
@@ -124,7 +121,6 @@ class ConnectionManager {
 //
 //                                        println("File saved to: ${destFile.absolutePath}")
 //
-//                                        // 3. הצגה בצ'אט
 //                                        val msg = ChatMessage(
 //                                            text = null,
 //                                            filePath = destFile.absolutePath,
@@ -137,7 +133,6 @@ class ConnectionManager {
 //                                        onChatMessageReceived?.invoke(msg)
 //                                    }
 //                                }
-//                                // ✅ טיפול בטקסט רגיל
 //                                else {
 //                                    val msg = ChatMessage(
 //                                        text = json.optString("text", ""),
@@ -174,7 +169,7 @@ class ConnectionManager {
         }
     }
 
-    // פונקציה שמכילה את הלוגיקה של ההורדה (נקראת מתוך ה-Thread)
+    // A function that contains the download logic (called from the Thread)
     private fun handleIncomingFile(json: JSONObject) {
         try {
             val fileName = json.getString("fileName")
@@ -182,10 +177,10 @@ class ConnectionManager {
             val size = json.getLong("fileSize")
             val mime = json.optString("mimeType", "file/*")
 //            val mime = json.optString("mimeType", "application/octet-stream")
-            // מוריד את הקובץ לתיקיית זמנית בזיכרון (לא שומר אוטומטית בדיסק)
+            // Downloads the file to a temporary folder in memory (does not automatically save to disk)
             val bytes = downloadFile(downloadPath)
             if (bytes != null) {
-                // ✅ אבחון: לוודא שלא ירד HTML/שגיאה במקום תמונה
+                // Make sure no HTML/error is displayed instead of an image.
                 if (mime.startsWith("image/")) {
                     val jpeg = isJpeg(bytes)
                     val htmlErr = looksLikeHtmlOrError(bytes)
@@ -200,50 +195,53 @@ class ConnectionManager {
                     }
                 }
 
-                // ✅ תיקון קריטי: שמירה עם סיומת נכונה כדי ש-Windows יזהה את הקובץ
+                // Save with the correct extension so that Windows recognizes the file
                 val extension = if (fileName.contains(".")) ".${fileName.substringAfterLast(".")}" else ".tmp"
                 val nameWithoutExt = if (fileName.contains(".")) fileName.substringBeforeLast(".") else fileName
-                // ✅ פתרון לבעיה 1: שמירה ל-Temp כדי לאפשר Open/Save
+                // Save to Temp to enable Open/Save
                 val tempFile = File.createTempFile("sb_${nameWithoutExt}_", extension)
                 tempFile.writeBytes(bytes)
-                tempFile.deleteOnExit() // הקובץ יימחק כשהתוכנה תיסגר
+                tempFile.deleteOnExit() // The file will be deleted when the software closes
 
-                // שומרים בתיקיית temp זמנית כדי להציג בתוכנה
+                val streamBridgeDir = File(System.getProperty("user.home"), "Documents/StreamBridge/ReceivedFiles")
+                if (!streamBridgeDir.exists()) {
+                    streamBridgeDir.mkdirs()
+                }
+
+                // Use timestamp + original name to avoid collisions
+                val uniqueName = "${System.currentTimeMillis()}_$fileName"
+                val permanentFile = File(streamBridgeDir, uniqueName)
+                permanentFile.writeBytes(bytes)
+
+                println("✅ File saved permanently to: ${permanentFile.absolutePath}")
+
 //                val tempDir = File(System.getProperty("java.io.tmpdir"), "StreamBridge")
 //                if (!tempDir.exists()) tempDir.mkdirs()
 //                val tempFile = File(tempDir, fileName)
 //                tempFile.writeBytes(bytes)
-//
-//                // שומרים בזיכרון את המיקום הזמני כדי שנוכל אחר כך לבצע Save ל-Downloads בלחיצת משתמש
 //                receivedTempFiles[fileName] = tempFile
-
-//            // ביצוע ההורדה בפועל
 //            val downloadedBytes = downloadFile(downloadPath)
-//
 //            if (downloadedBytes != null) {
-//                // שמירה בתיקיית ההורדות במחשב
 //                val downloadsDir = File(System.getProperty("user.home"), "Downloads/StreamBridge")
 //                if (!downloadsDir.exists()) {
 //                    downloadsDir.mkdirs()
 //                }
-
 //                val destFile = File(downloadsDir, fileName)
 //                destFile.writeBytes(downloadedBytes)
-//
 //                println("File saved to: ${destFile.absolutePath}")
 
-                // יצירת הודעה לתצוגה בצ'אט
+                // Create a message to display in chat
                 val msg = ChatMessage(
 //                    text = null,
-                    filePath = tempFile.absolutePath, // נתיב לקובץ הזמני
+                    filePath = permanentFile.absolutePath, // נתיב לקובץ הזמני
                     remotePath = downloadPath,
-                    fileName = fileName,
+                    fileName = fileName, // Keep original name for display
                     fileSize = size,
                     type = determineMessageType(mime),
                     timestamp = json.optLong("timestamp", System.currentTimeMillis()),
                     isIncoming = true
                 )
-                // עדכון המסך (Callback)
+                // Screen update (Callback)
                 onChatMessageReceived?.invoke(msg)
             } else {
                 println("Failed to download file: $fileName")
@@ -256,7 +254,6 @@ class ConnectionManager {
 
 
 
-    // בקשת רשימת קבצים (HTTP)
 //    fun fetchFileList(): String? {
 //        if (phoneIP.isEmpty()) return null
 //        return try {
@@ -273,14 +270,14 @@ class ConnectionManager {
 //    }
 
 
-    // ✅ בדיקה אם זה באמת JPEG לפי חתימה (magic bytes)
+    // Checking if it is really a JPEG by signature (magic bytes)
     private fun isJpeg(bytes: ByteArray): Boolean =
         bytes.size >= 3 &&
                 (bytes[0].toInt() and 0xFF) == 0xFF &&
                 (bytes[1].toInt() and 0xFF) == 0xD8 &&
                 (bytes[2].toInt() and 0xFF) == 0xFF
 
-    // ✅ בדיקה אם זה נראה כמו HTML/שגיאה שחזרה במקום קובץ
+    // Checking if it looks like HTML/error returned instead of a file
     private fun looksLikeHtmlOrError(bytes: ByteArray): Boolean {
         val head = bytes.take(200).toByteArray().toString(Charsets.UTF_8).lowercase()
         return head.contains("<html") ||
@@ -292,20 +289,18 @@ class ConnectionManager {
 
     fun downloadFile(path: String): ByteArray? {
         if (phoneIP.isEmpty()) return null
-        // ✅ בדיקת אבטחה: מניעת קריסה אם הנתיב שגוי
+        // Preventing a crash if the path is incorrect
         if (!path.startsWith("/files/")) return null
         return try {
-            // ✅ תיקון קריטי: שימוש ב-URI כדי לקודד עברית ורווחים בצורה חוקית
+            // Using URI to encode Hebrew and spaces legally
             // המבנה: scheme, authority (host:port), path, query, fragment
             val uri = URI("http", null, phoneIP, 8080, path, null, null)
-            val url = uri.toASCIIString() // זה הופך "הגדרות" ל-%D7%94..
+            val url = uri.toASCIIString() // This turns "Settings" into %D7%94..
 
             // אם הנתיב כבר מתחיל ב-http, משתמשים בו, אחרת בונים אותו
 //            val url = if (path.startsWith("http")) path else "http://$phoneIP:8080$path"
 
-            // במקרה של רווחים או תווים מיוחדים ב-URL, עדיף לקודד (אבל בזהירות לא לקודד את כל ה-URL)
-            // לגרסה פשוטה כרגע נשתמש ב-URL כמו שהוא (NanoHTTPD מטפל בזה בדרך כלל)
-
+            // In case of spaces or special characters in the URL, it is better to encode
             val request = Request.Builder().url(url).build()
             httpClient.newCall(request).execute().use { response ->
                 if (response.isSuccessful) response.body?.bytes() else null
@@ -316,7 +311,7 @@ class ConnectionManager {
         }
     }
 
-    // ✅ שליחת הודעת צ'אט מהמחשב לטלפון
+    // Send a chat message from your computer to your phone
     fun sendChatMessage(msg: ChatMessage) {
         if (!isConnected || webSocketClient == null) return
 
@@ -335,7 +330,7 @@ class ConnectionManager {
 
     fun uploadFile(file: File, type: MessageType) {
         if (phoneIP.isEmpty()) return
-        Thread { // גם העלאה כדאי לעשות ברקע
+        Thread { // Upload in the background
             try {
                 val mediaType = "application/octet-stream".toMediaTypeOrNull()
                 val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -379,7 +374,6 @@ class ConnectionManager {
                     return null
                 }
 
-                // ✅ הכי חשוב: bytes, לא string!
                 val bytes = resp.body?.bytes()
                 if (bytes == null || bytes.isEmpty()) null else bytes
             }
@@ -392,16 +386,11 @@ class ConnectionManager {
 //                val code = resp.code
 //                val ct = resp.header("Content-Type")
 //                println("fetchCameraFrame <- code=$code contentType=$ct")
-//
 //                if (code == 204) return null
 //                if (!resp.isSuccessful) return null
-//
 //                val bytes = resp.body?.bytes() ?: return null
 //                println("fetchCameraFrame <- bytes=${bytes.size}")
-//
-//                // אם זה לא תמונה, לא ננסה לטעון
 //                if (ct?.startsWith("image/") != true) return null
-//
 //                bytes
 //            }
 //        } catch (e: Exception) {
@@ -409,7 +398,6 @@ class ConnectionManager {
 //            null
 //        }
 //    }
-
 
 //            httpClient.newCall(request).execute().use { it.body?.bytes() }
 //        } catch (e: Exception) { null }
