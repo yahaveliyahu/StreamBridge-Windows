@@ -246,10 +246,10 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             bubble.children.add(fileBox)
 
             // Open and save buttons
-            val btnBox = HBox(10.0).apply {
-                alignment = Pos.CENTER
-                padding = Insets(5.0, 0.0, 0.0, 0.0)
-            }
+//            val btnBox = HBox(10.0).apply {
+//                alignment = Pos.CENTER
+//                padding = Insets(5.0, 0.0, 0.0, 0.0)
+//            }
 
 //            val openBtn = Button("Open").apply {
 //                style = "-fx-font-size: 10px; -fx-background-radius: 5; -fx-cursor: hand;"
@@ -263,61 +263,61 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 //                }
 //            }
 
-            val saveBtn = Button("Save As").apply {
-                style = "-fx-font-size: 10px; -fx-background-radius: 5; -fx-cursor: hand;"
-
-                setOnAction {
-                    val originalName = msg.fileName ?: "file_${System.currentTimeMillis()}"
-                    val chooser = FileChooser().apply { initialFileName = msg.fileName }
-                    val dest = chooser.showSaveDialog(chatListView.scene.window) ?: return@setOnAction
-
-                    try {
-                        var finalDest = dest
-
-                        // If the user deletes an extension – it is automatically restored.
-                        if (!finalDest.name.contains(".") && originalName.contains(".")) {
-                            val ext = originalName.substringAfterLast(".")
-
-//                        if (!finalDest.name.contains(".") && msg.fileName.contains(".")) {
-//                            val ext = msg.fileName.substringAfterLast(".")
-                            finalDest = File(finalDest.parentFile, "${finalDest.name}.$ext")
-                        }
-                        val local = msg.filePath?.let { File(it) }
-
-                        // If there is a local file and it exists – normal copy
-                        if (local != null && local.exists()) {
-                            local.copyTo(finalDest, overwrite = true)
-                            println("Saved locally: ${finalDest.absolutePath}")
-                            return@setOnAction
-                        }
-
-                        // Otherwise – re-download from the phone and save to the destination
-                        val remote = msg.remotePath
-                        if (remote.isNullOrBlank()) {
-                            println("No local file and no remotePath to download")
-                            return@setOnAction
-                        }
-
-                        // Download in the background to avoid UI crashes
-                        scope.launch {
-                            try {
-                                val bytes = connectionManager.downloadFile(remote)
-                                if (bytes != null) {
-                                    finalDest.writeBytes(bytes)
-                                    println("Saved by re-download: ${finalDest.absolutePath}")
-                                } else {
-                                    println("Failed to re-download for saving. remotePath=$remote")
-                                }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
+//            val saveBtn = Button("Save As").apply {
+//                style = "-fx-font-size: 10px; -fx-background-radius: 5; -fx-cursor: hand;"
+//
+//                setOnAction {
+//                    val originalName = msg.fileName ?: "file_${System.currentTimeMillis()}"
+//                    val chooser = FileChooser().apply { initialFileName = msg.fileName }
+//                    val dest = chooser.showSaveDialog(chatListView.scene.window) ?: return@setOnAction
+//
+//                    try {
+//                        var finalDest = dest
+//
+//                        // If the user deletes an extension – it is automatically restored.
+//                        if (!finalDest.name.contains(".") && originalName.contains(".")) {
+//                            val ext = originalName.substringAfterLast(".")
+//
+////                        if (!finalDest.name.contains(".") && msg.fileName.contains(".")) {
+////                            val ext = msg.fileName.substringAfterLast(".")
+//                            finalDest = File(finalDest.parentFile, "${finalDest.name}.$ext")
+//                        }
+//                        val local = msg.filePath?.let { File(it) }
+//
+//                        // If there is a local file and it exists – normal copy
+//                        if (local != null && local.exists()) {
+//                            local.copyTo(finalDest, overwrite = true)
+//                            println("Saved locally: ${finalDest.absolutePath}")
+//                            return@setOnAction
+//                        }
+//
+//                        // Otherwise – re-download from the phone and save to the destination
+//                        val remote = msg.remotePath
+//                        if (remote.isNullOrBlank()) {
+//                            println("No local file and no remotePath to download")
+//                            return@setOnAction
+//                        }
+//
+//                        // Download in the background to avoid UI crashes
+//                        scope.launch {
+//                            try {
+//                                val bytes = connectionManager.downloadFile(remote)
+//                                if (bytes != null) {
+//                                    finalDest.writeBytes(bytes)
+//                                    println("Saved by re-download: ${finalDest.absolutePath}")
+//                                } else {
+//                                    println("Failed to re-download for saving. remotePath=$remote")
+//                                }
+//                            } catch (e: Exception) {
+//                                e.printStackTrace()
+//                            }
+//                        }
+//
+//                    } catch (e: Exception) {
+//                        e.printStackTrace()
+//                    }
+//                }
+//            }
 
 //            if (msg.filePath != null) {
 //                        val chooser = FileChooser()
@@ -330,8 +330,8 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 //                }
 //            }
 //            btnBox.children.addAll(openBtn, saveBtn)
-            btnBox.children.add(saveBtn)
-            bubble.children.add(btnBox)
+//            btnBox.children.add(saveBtn)
+//            bubble.children.add(btnBox)
 
         // Right-click context menu for file messages
         bubble.setOnContextMenuRequested { event ->
@@ -598,7 +598,13 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             }
         }
 
-        contextMenu.items.addAll(deleteItem, copyItem, shareItem)
+        val saveItem = MenuItem("Save As").apply {
+            setOnAction {
+                saveFileAs(msg)
+            }
+        }
+
+        contextMenu.items.addAll(deleteItem, copyItem, shareItem, saveItem)
         contextMenu.show(bubble, screenX, screenY)
     }
 
@@ -659,6 +665,55 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         val result = alert.showAndWait()
         if (result.isPresent && result.get() == ButtonType.OK) {
             deleteMessage(msg)
+        }
+    }
+
+    private fun saveFileAs(msg: ChatMessage) {
+        val originalName = msg.fileName ?: "file_${System.currentTimeMillis()}"
+        val chooser = FileChooser().apply { initialFileName = msg.fileName }
+        val dest = chooser.showSaveDialog(chatListView.scene.window) ?: return
+
+        try {
+            var finalDest = dest
+
+            // If the user deletes an extension – it is automatically restored.
+            if (!finalDest.name.contains(".") && originalName.contains(".")) {
+                val ext = originalName.substringAfterLast(".")
+                finalDest = File(finalDest.parentFile, "${finalDest.name}.$ext")
+            }
+            val local = msg.filePath?.let { File(it) }
+
+            // If there is a local file and it exists – normal copy
+            if (local != null && local.exists()) {
+                local.copyTo(finalDest, overwrite = true)
+                println("Saved locally: ${finalDest.absolutePath}")
+                return
+            }
+
+            // Otherwise – re-download from the phone and save to the destination
+            val remote = msg.remotePath
+            if (remote.isNullOrBlank()) {
+                println("No local file and no remotePath to download")
+                return
+            }
+
+            // Download in the background to avoid UI crashes
+            scope.launch {
+                try {
+                    val bytes = connectionManager.downloadFile(remote)
+                    if (bytes != null) {
+                        finalDest.writeBytes(bytes)
+                        println("Saved by re-download: ${finalDest.absolutePath}")
+                    } else {
+                        println("Failed to re-download for saving. remotePath=$remote")
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
