@@ -10,20 +10,20 @@ import java.util.*
 enum class MessageType { TEXT, IMAGE, VIDEO, AUDIO, FILE }
 
 // מבנה קובץ (לשימוש ברשימות קבצים אם צריך, מונע שגיאות בקבצים אחרים)
-data class FileItem(
-    val name: String,
-    val path: String,
-    val size: Long,
-    val type: String
-) {
-    val sizeStr: String
-        get() = when {
-            size < 1024 -> "$size B"
-            size < 1024 * 1024 -> "${size / 1024} KB"
-            size < 1024 * 1024 * 1024 -> "${size / (1024 * 1024)} MB"
-            else -> String.format("%.2f GB", size / (1024.0 * 1024 * 1024))
-        }
-}
+//data class FileItem(
+//    val name: String,
+//    val path: String,
+//    val size: Long,
+//    val type: String
+//) {
+//    val sizeStr: String
+//        get() = when {
+//            size < 1024 -> "$size B"
+//            size < 1024 * 1024 -> "${size / 1024} KB"
+//            size < 1024 * 1024 * 1024 -> "${size / (1024 * 1024)} MB"
+//            else -> String.format("%.2f GB", size / (1024.0 * 1024 * 1024))
+//        }
+//}
 
 // Message structure
 data class ChatMessage(
@@ -143,5 +143,28 @@ class HistoryManager {
         }
         historyFile.writeText(jsonArray.toString())
         println("Chat history cleaned: ${history.size} messages kept (older than $HISTORY_TTL_DAYS days removed)")
+    }
+
+    // Delete specific message from history
+    fun deleteMessage(msg: ChatMessage) {
+        val history = loadHistory().toMutableList()
+        history.removeAll { it.id == msg.id }
+
+        val jsonArray = JSONArray()
+        history.forEach { item ->
+            val json = JSONObject().apply {
+                put("id", item.id)
+                put("text", item.text)
+                put("filePath", item.filePath)
+                put("fileName", item.fileName)
+                put("fileSize", item.fileSize)
+                put("type", item.type.name)
+                put("timestamp", item.timestamp)
+                put("isIncoming", item.isIncoming)
+            }
+            jsonArray.put(json)
+        }
+        historyFile.writeText(jsonArray.toString())
+        println("Message deleted from history: ${msg.id}")
     }
 }

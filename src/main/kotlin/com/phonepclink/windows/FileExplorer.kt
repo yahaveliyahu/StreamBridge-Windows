@@ -26,6 +26,23 @@ import java.awt.Desktop
 import java.io.File
 import java.util.*
 
+import javafx.scene.input.Clipboard
+import javafx.scene.input.ClipboardContent
+import javafx.scene.control.ContextMenu
+import javafx.scene.control.MenuItem
+import javafx.scene.input.MouseButton
+
+import java.awt.Robot
+import java.awt.event.KeyEvent
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+
+import javafx.animation.FadeTransition
+import javafx.scene.control.Label
+import javafx.stage.Popup
+import javafx.stage.Window
+import javafx.util.Duration
+
 class FileExplorer(private val connectionManager: ConnectionManager) {
 
     private val chatListView = ListView<ChatMessage>()
@@ -188,6 +205,12 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             text.style = "-fx-font-size: 14px;"
             val flow = TextFlow(text)
             bubble.children.add(flow)
+
+            // Right-click context menu for text messages
+            bubble.setOnContextMenuRequested { event ->
+                showTextContextMenu(msg, bubble, event.screenX, event.screenY)
+                event.consume()
+            }
         } else {
             // File/Image
             val fileBox = HBox(10.0).apply { alignment = Pos.CENTER_LEFT }
@@ -228,17 +251,17 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 padding = Insets(5.0, 0.0, 0.0, 0.0)
             }
 
-            val openBtn = Button("Open").apply {
-                style = "-fx-font-size: 10px; -fx-background-radius: 5; -fx-cursor: hand;"
-                setOnAction {
-                    val path = msg.filePath ?: return@setOnAction
-                    try {
-                        Desktop.getDesktop().open(File(path))
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
+//            val openBtn = Button("Open").apply {
+//                style = "-fx-font-size: 10px; -fx-background-radius: 5; -fx-cursor: hand;"
+//                setOnAction {
+//                    val path = msg.filePath ?: return@setOnAction
+//                    try {
+//                        Desktop.getDesktop().open(File(path))
+//                    } catch (e: Exception) {
+//                        e.printStackTrace()
+//                    }
+//                }
+//            }
 
             val saveBtn = Button("Save As").apply {
                 style = "-fx-font-size: 10px; -fx-background-radius: 5; -fx-cursor: hand;"
@@ -306,15 +329,43 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 //                    }
 //                }
 //            }
-            btnBox.children.addAll(openBtn, saveBtn)
+//            btnBox.children.addAll(openBtn, saveBtn)
+            btnBox.children.add(saveBtn)
             bubble.children.add(btnBox)
+
+        // Right-click context menu for file messages
+        bubble.setOnContextMenuRequested { event ->
+            showFileContextMenu(msg, bubble, event.screenX, event.screenY)
+            event.consume()
+        }
+    }
+
+        // Make bubble clickable on left-click
+        bubble.setOnMouseClicked { event ->
+            // Only respond to left click (primary button)
+            if (event.button == MouseButton.PRIMARY && event.clickCount == 1) {
+                val path = msg.filePath ?: return@setOnMouseClicked
+                try {
+                    val file = File(path)
+                    if (file.exists()) {
+                        Desktop.getDesktop().open(file)
+                        println("Opened file: $path")
+                    } else {
+                        println("File not found: $path")
+                        val alert = Alert(javafx.scene.control.Alert.AlertType.ERROR)
+                        alert.title = "File Not Found"
+                        alert.contentText = "File no longer exists"
+                        alert.showAndWait()
+                    }
+                } catch (e: Exception) {
+                    println("Failed to open file: ${e.message}")
+                    e.printStackTrace()
+                }
+            }
         }
 
-//            bubble.setOnMouseClicked {
-//                if (msg.isIncoming) downloadFile(msg)
-//            }
-//            bubble.style += "-fx-cursor: hand;"
-//        }
+        // Change cursor to hand when hovering over bubble
+        bubble.style += "-fx-cursor: hand;"
 
         // time
         val timeLbl = Label(msg.timeStr).apply {
@@ -359,7 +410,8 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 fitHeight = 80.0
                 isPreserveRatio = true
                 isSmooth = true
-                style = "-fx-background-radius: 8; -fx-border-radius: 8; -fx-border-color: rgba(0,0,0,0.1); -fx-border-width: 1;"
+                style =
+                    "-fx-background-radius: 8; -fx-border-radius: 8; -fx-border-color: rgba(0,0,0,0.1); -fx-border-width: 1;"
             }
         } catch (e: Exception) {
             println("Error loading image thumbnail: ${e.message}")
@@ -503,7 +555,302 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         MessageType.AUDIO -> "🎵"
         else -> "📄"
     }
+
+    // Show context menu for file messages
+    private fun showFileContextMenu(msg: ChatMessage, bubble: VBox, screenX: Double, screenY: Double) {
+        val contextMenu = ContextMenu()
+
+        // Delete option
+        val deleteItem = MenuItem("Delete").apply {
+            setOnAction {
+                showDeleteConfirmation(msg)
+
+                val window = bubble.scene.window
+                if (window != null) {
+                    showToast(window, "The message has been deleted!")
+                }
+            }
+        }
+
+        // Copy text option (copies filename)
+        val copyItem = MenuItem("Copy text").apply {
+            setOnAction {
+                val clipboard = Clipboard.getSystemClipboard()
+                val content = ClipboardContent()
+                content.putString(msg.fileName ?: "")
+                clipboard.setContent(content)
+                println("Copied filename: ${msg.fileName}")
+
+                val window = bubble.scene.window
+                if (window != null) {
+                    showToast(window, "Text copied!")
+                }
+            }
+        }
+
+        // Share option (opens file location in explorer)
+        val shareItem = MenuItem("Copy File").apply {
+            setOnAction {
+                copyFile(msg)
+
+                val window = bubble.scene.window
+                showToast(window, "Copied to clipboard!")
+            }
+        }
+
+        contextMenu.items.addAll(deleteItem, copyItem, shareItem)
+        contextMenu.show(bubble, screenX, screenY)
+    }
+
+    // Show context menu for text messages
+    private fun showTextContextMenu(msg: ChatMessage, bubble: VBox, screenX: Double, screenY: Double) {
+        val contextMenu = ContextMenu()
+
+        // Delete option
+        val deleteItem = MenuItem("Delete").apply {
+            setOnAction {
+                showDeleteConfirmation(msg)
+
+                val window = bubble.scene.window
+                if (window != null) {
+                    showToast(window, "The message has been deleted!")
+                }
+            }
+        }
+
+        // Copy text option
+        val copyItem = MenuItem("Copy text").apply {
+            setOnAction {
+                val clipboard = Clipboard.getSystemClipboard()
+                val content = ClipboardContent()
+                content.putString(msg.text ?: "")
+                clipboard.setContent(content)
+                println("Copied text: ${msg.text}")
+
+                val window = bubble.scene.window
+                if (window != null) {
+                    showToast(window, "Text copied!")
+                }
+            }
+        }
+
+        // Share option (copies text to clipboard for sharing)
+//        val shareItem = MenuItem("Share").apply {
+//            setOnAction {
+//                shareText(msg)
+//            }
+//        }
+
+        contextMenu.items.addAll(deleteItem, copyItem)
+        contextMenu.show(bubble, screenX, screenY)
+    }
+
+    // Show delete confirmation dialog
+    private fun showDeleteConfirmation(msg: ChatMessage) {
+        val alert = Alert(javafx.scene.control.Alert.AlertType.CONFIRMATION)
+        alert.title = "Delete Message"
+        alert.headerText = "Are you sure you want to delete this message?"
+        alert.contentText = if (msg.type == MessageType.TEXT) {
+            "Text: ${msg.text?.take(50)}..."
+        } else {
+            "File: ${msg.fileName}"
+        }
+
+        val result = alert.showAndWait()
+        if (result.isPresent && result.get() == ButtonType.OK) {
+            deleteMessage(msg)
+        }
+    }
+
+    // Delete message from chat
+    private fun deleteMessage(msg: ChatMessage) {
+        Platform.runLater {
+            // Remove from ListView
+            chatListView.items.remove(msg)
+
+            // Remove from history
+            historyManager.deleteMessage(msg)
+
+            println("Message deleted: ${msg.id}")
+        }
+    }
+
+    private fun copyFile(msg: ChatMessage) {
+            // Extract the file path from your message object
+            val file = File(msg.filePath)
+
+            if (file.exists()) {
+                val clipboard = Clipboard.getSystemClipboard()
+                val content = ClipboardContent()
+
+                // Add the file to the clipboard content
+                content.putFiles(listOf(file))
+
+                // Push it to the system clipboard
+                clipboard.setContent(content)
+
+                // Optional: Log it or show a lightweight UI notification
+                println("File copied to clipboard: ${file.name}")
+            } else {
+                println("Could not share: File does not exist at ${file.absolutePath}")
+            }
+        }
+
+
+    // ✅ SIMPLER: Share text using Win+H
+    private fun shareText(msg: ChatMessage) {
+        try {
+            val text = msg.text ?: return
+
+            // Copy text to clipboard
+            val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+            val selection = StringSelection(text)
+            clipboard.setContents(selection, selection)
+
+            // Wait for clipboard
+            Thread.sleep(100)
+
+            // Press Win+H to open Share UI
+            val robot = Robot()
+            robot.keyPress(KeyEvent.VK_WINDOWS)
+            robot.keyPress(KeyEvent.VK_H)
+            Thread.sleep(50)
+            robot.keyRelease(KeyEvent.VK_H)
+            robot.keyRelease(KeyEvent.VK_WINDOWS)
+
+            println("✅ Opened Windows Share UI with text")
+
+        } catch (e: Exception) {
+            println("❌ Error: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    fun showToast(ownerWindow: Window, message: String) {
+        val popup = Popup()
+
+        // Create the visual element with some basic CSS styling
+        val label = Label(message).apply {
+            style = """
+            -fx-background-color: rgba(50, 50, 50, 0.9); 
+            -fx-text-fill: white; 
+            -fx-padding: 10px 20px; 
+            -fx-background-radius: 20px;
+            -fx-font-size: 14px;
+        """.trimIndent()
+        }
+
+        popup.content.add(label)
+
+        // Show the popup first so JavaFX calculates its actual width/height
+        popup.show(ownerWindow)
+
+        // Position it at the bottom center of the parent window
+        popup.x = ownerWindow.x + (ownerWindow.width / 2) - (label.width / 2)
+        popup.y = ownerWindow.y + ownerWindow.height - 80.0 // 80 pixels from the bottom
+
+        // Create a fade-out animation
+        val fadeOut = FadeTransition(Duration.seconds(1.0), label).apply {
+            fromValue = 1.0
+            toValue = 0.0
+            delay = Duration.seconds(1.5) // How long it stays fully visible
+            setOnFinished { popup.hide() } // Clean up when the animation is done
+        }
+
+        fadeOut.play()
+    }
 }
+
+//    // Share file (open in file explorer)
+//    private fun shareFile(msg: ChatMessage) {
+//        try {
+//            val path = msg.filePath ?: return
+//            val file = File(path)
+//
+//            if (file.exists()) {
+//                // Open file location in explorer
+//                Desktop.getDesktop().browseFileDirectory(file)
+//                println("Opened file location: ${file.parent}")
+//            } else {
+//                println("File not found: $path")
+//            }
+//        } catch (e: Exception) {
+//            println("Error sharing file: ${e.message}")
+//            e.printStackTrace()
+//        }
+//    }
+//
+//    // ✅ NEW: Share text (show dialog with text to copy)
+//    private fun shareText(msg: ChatMessage) {
+//        val clipboard = Clipboard.getSystemClipboard()
+//        val content = ClipboardContent()
+//        content.putString(msg.text ?: "")
+//        clipboard.setContent(content)
+//
+//        val alert = javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.INFORMATION)
+//        alert.title = "Text Copied"
+//        alert.headerText = "Text copied to clipboard"
+//        alert.contentText = "You can now paste it anywhere to share"
+//        alert.showAndWait()
+//    }
+//}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 //class FileExplorer(private val connectionManager: ConnectionManager) {
 //    private val tableView = TableView<FileItem>()
