@@ -32,16 +32,18 @@ import javafx.scene.control.ContextMenu
 import javafx.scene.control.MenuItem
 import javafx.scene.input.MouseButton
 
-import java.awt.Robot
-import java.awt.event.KeyEvent
-import java.awt.Toolkit
-import java.awt.datatransfer.StringSelection
-
 import javafx.animation.FadeTransition
 import javafx.scene.control.Label
 import javafx.stage.Popup
 import javafx.stage.Window
 import javafx.util.Duration
+
+import com.drew.imaging.ImageMetadataReader
+
+import com.drew.metadata.exif.ExifDirectoryBase
+import javafx.scene.layout.StackPane
+
+import javafx.scene.Group
 
 class FileExplorer(private val connectionManager: ConnectionManager) {
 
@@ -347,15 +349,31 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 val path = msg.filePath ?: return@setOnMouseClicked
                 try {
                     val file = File(path)
-                    if (file.exists()) {
+                    if (!file.exists()) {
+                        Alert(javafx.scene.control.Alert.AlertType.ERROR).apply {
+                            title = "File Not Found"
+                            contentText = "File no longer exists at:\n$path"
+                            showAndWait()
+                        }
+                        return@setOnMouseClicked
+                    }
+
+                    // VCF contacts: show a parsed dialog instead of opening "People" (which crashes)
+//                        try {
+//                            // הנתיב הסטנדרטי ב-Windows ל-WAB
+//                            val wabPath = "C:\\Program Files\\Common Files\\System\\wab.exe"
+//                            ProcessBuilder(wabPath, file.absolutePath).start()
+//                            println("Opened VCF with wab.exe")
+//                        } catch (e: Exception) {
+//                            println("wab.exe not found or failed, falling back to internal dialog")
+//                        showVcfDialog(file)
+//                        }
+                    // Try all known wab.exe locations before falling back to built-in dialog
+                    if (file.extension.lowercase() == "vcf") {
+                        showVcfDialog(file)
+                    } else {
                         Desktop.getDesktop().open(file)
                         println("Opened file: $path")
-                    } else {
-                        println("File not found: $path")
-                        val alert = Alert(javafx.scene.control.Alert.AlertType.ERROR)
-                        alert.title = "File Not Found"
-                        alert.contentText = "File no longer exists"
-                        alert.showAndWait()
                     }
                 } catch (e: Exception) {
                     println("Failed to open file: ${e.message}")
@@ -402,17 +420,29 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 }
             }
 
-            // Load image
-            val image = Image(file.toURI().toString(), 80.0, 80.0, true, true, true)
+            // Get the exact rotation angle
+            val rotationAngle = getExifRotation(file)
 
-            ImageView(image).apply {
-                fitWidth = 80.0
-                fitHeight = 80.0
+            // Load image: Set the last parameter to 'false' (disables background loading)
+            // This ensures the image is fully loaded before we calculate bounds and rotation
+            val image = Image(file.toURI().toString(), 120.0, 120.0, true, true, false)
+            val imageView = ImageView(image).apply {
                 isPreserveRatio = true
                 isSmooth = true
-                style =
-                    "-fx-background-radius: 8; -fx-border-radius: 8; -fx-border-color: rgba(0,0,0,0.1); -fx-border-width: 1;"
+                rotate = rotationAngle // Apply the rotation
             }
+
+            // Wrap in a Group.
+            // JavaFX layouts ignore rotated dimensions unless wrapped in a Group!
+            val rotatedGroup = Group(imageView)
+
+            // Wrap the ImageView in a StackPane!
+            // This forces JavaFX to respect the rotated dimensions in the HBox layout.
+            StackPane(rotatedGroup).apply {
+                style = "-fx-background-radius: 8; -fx-border-radius: 8; -fx-border-color: rgba(0,0,0,0.1); -fx-border-width: 1;"
+                padding = Insets(2.0) // Keeps the image from clipping the border
+            }
+
         } catch (e: Exception) {
             println("Error loading image thumbnail: ${e.message}")
             // Fallback to icon on error
@@ -423,6 +453,28 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 alignment = Pos.CENTER
             }
         }
+    }
+
+    // Helper function to extract EXIF rotation
+    private fun getExifRotation(file: File): Double {
+        try {
+            val metadata = ImageMetadataReader.readMetadata(file)
+
+            // Loop through ALL directories because Android phones store this in different places
+            for (directory in metadata.directories) {
+                if (directory.containsTag(ExifDirectoryBase.TAG_ORIENTATION)) {
+                    return when (directory.getInt(ExifDirectoryBase.TAG_ORIENTATION)) {
+                        3 -> 180.0
+                        6 -> 90.0
+                        8 -> 270.0
+                        else -> 0.0
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            println("Could not read EXIF metadata: ${e.message}")
+        }
+        return 0.0
     }
 
 //        val container = VBox(2.0).apply {
@@ -744,7 +796,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 // Push it to the system clipboard
                 clipboard.setContent(content)
 
-                // Optional: Log it or show a lightweight UI notification
+                // Log it or show a lightweight UI notification
                 println("File copied to clipboard: ${file.name}")
             } else {
                 println("Could not share: File does not exist at ${file.absolutePath}")
@@ -752,36 +804,36 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         }
 
 
-    // ✅ SIMPLER: Share text using Win+H
-    private fun shareText(msg: ChatMessage) {
-        try {
-            val text = msg.text ?: return
+//    // ✅ SIMPLER: Share text using Win+H
+//    private fun shareText(msg: ChatMessage) {
+//        try {
+//            val text = msg.text ?: return
+//
+//            // Copy text to clipboard
+//            val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+//            val selection = StringSelection(text)
+//            clipboard.setContents(selection, selection)
+//
+//            // Wait for clipboard
+//            Thread.sleep(100)
+//
+//            // Press Win+H to open Share UI
+//            val robot = Robot()
+//            robot.keyPress(KeyEvent.VK_WINDOWS)
+//            robot.keyPress(KeyEvent.VK_H)
+//            Thread.sleep(50)
+//            robot.keyRelease(KeyEvent.VK_H)
+//            robot.keyRelease(KeyEvent.VK_WINDOWS)
+//
+//            println("✅ Opened Windows Share UI with text")
+//
+//        } catch (e: Exception) {
+//            println("❌ Error: ${e.message}")
+//            e.printStackTrace()
+//        }
+//    }
 
-            // Copy text to clipboard
-            val clipboard = Toolkit.getDefaultToolkit().systemClipboard
-            val selection = StringSelection(text)
-            clipboard.setContents(selection, selection)
-
-            // Wait for clipboard
-            Thread.sleep(100)
-
-            // Press Win+H to open Share UI
-            val robot = Robot()
-            robot.keyPress(KeyEvent.VK_WINDOWS)
-            robot.keyPress(KeyEvent.VK_H)
-            Thread.sleep(50)
-            robot.keyRelease(KeyEvent.VK_H)
-            robot.keyRelease(KeyEvent.VK_WINDOWS)
-
-            println("✅ Opened Windows Share UI with text")
-
-        } catch (e: Exception) {
-            println("❌ Error: ${e.message}")
-            e.printStackTrace()
-        }
-    }
-
-    fun showToast(ownerWindow: Window, message: String) {
+    private fun showToast(ownerWindow: Window, message: String) {
         val popup = Popup()
 
         // Create the visual element with some basic CSS styling
@@ -814,6 +866,707 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 
         fadeOut.play()
     }
+
+    // ─────────── VCF Contact Viewer ───────────
+
+    /**
+     * Parses a VCF file and shows the contact details in a native JavaFX dialog.
+     * Avoids handing the file to Windows "People" app which crashes on modern systems.
+     */
+    private fun showVcfDialog(vcfFile: File) {
+        val contacts = parseVcf(vcfFile)
+
+        val dialog = Dialog<Void>()
+        dialog.title = "Contact – ${vcfFile.nameWithoutExtension}"
+        dialog.headerText = null
+
+        val content = VBox(12.0).apply { padding = Insets(20.0) }
+
+        if (contacts.isEmpty()) {
+            content.children.add(Label("Could not read the contact file.").apply {
+                style = "-fx-text-fill: gray;"
+            })
+        } else {
+            for (contact in contacts) {
+                val card = VBox(6.0).apply {
+                    padding = Insets(12.0)
+                    style = """
+                        -fx-background-color: #F8F8F8;
+                        -fx-background-radius: 10;
+                        -fx-border-color: #DDD;
+                        -fx-border-radius: 10;
+                        -fx-border-width: 1;
+                    """.trimIndent()
+                }
+
+                // Draws (or redraws) all labels inside the card.
+                // Called once on load and again after the user saves edits.
+                fun refreshCard(contact: VcfContact, target: VBox) {
+                    target.children.clear()
+                    if (contact.fullName.isNotBlank()) {
+                        target.children.add(Label(contact.fullName).apply {
+                            style = "-fx-font-size: 16px; -fx-font-weight: bold;"
+                        })
+                    }
+                    if (contact.organization.isNotBlank()) {
+                        target.children.add(Label("\uD83C\uDFE2  ${contact.organization}").apply {
+                            style = "-fx-font-size: 12px; -fx-text-fill: #555;"
+                        })
+                    }
+                    contact.phones.forEach { (label, number) ->
+                        val lbl = if (label.isNotBlank()) "\uD83D\uDCDE  $label: $number" else "\uD83D\uDCDE  $number"
+                        val phoneLbl = Label(lbl).apply {
+                            style = "-fx-font-size: 13px; -fx-cursor: hand;"
+                            tooltip = Tooltip("Click to copy")
+                        }
+                        phoneLbl.setOnMouseClicked {
+                            val cb = Clipboard.getSystemClipboard()
+                            val cc = ClipboardContent(); cc.putString(number); cb.setContent(cc)
+                            showToast(dialog.dialogPane.scene.window, "Copied: $number")
+                        }
+                        target.children.add(phoneLbl)
+                    }
+                    contact.emails.forEach { (label, email) ->
+                        val lbl = if (label.isNotBlank()) "\u2709\uFE0F  $label: $email" else "\u2709\uFE0F  $email"
+                        val emailLbl = Label(lbl).apply {
+                            style = "-fx-font-size: 13px; -fx-cursor: hand;"
+                            tooltip = Tooltip("Click to copy")
+                        }
+                        emailLbl.setOnMouseClicked {
+                            val cb = Clipboard.getSystemClipboard()
+                            val cc = ClipboardContent(); cc.putString(email); cb.setContent(cc)
+                            showToast(dialog.dialogPane.scene.window, "Copied: $email")
+                        }
+                        target.children.add(emailLbl)
+                    }
+                    contact.addresses.forEach { addr ->
+                        if (addr.isNotBlank()) {
+                            target.children.add(Label("\uD83D\uDCCD  $addr").apply {
+                                style = "-fx-font-size: 13px; -fx-wrap-text: true; -fx-max-width: 380;"
+                            })
+                        }
+                    }
+                    if (contact.note.isNotBlank()) {
+                        target.children.add(Label("\uD83D\uDCDD  ${contact.note}").apply {
+                            style = "-fx-font-size: 12px; -fx-text-fill: #666; -fx-wrap-text: true; -fx-max-width: 380;"
+                        })
+                    }
+                }
+
+                refreshCard(contact, card)
+                content.children.add(card)
+            }
+        }
+
+
+//                if (contact.fullName.isNotBlank()) {
+//                    card.children.add(Label(contact.fullName).apply {
+//                        style = "-fx-font-size: 16px; -fx-font-weight: bold;"
+//                    })
+//                }
+//                if (contact.organization.isNotBlank()) {
+//                    card.children.add(Label("\uD83C\uDFE2  ${contact.organization}").apply {
+//                        style = "-fx-font-size: 12px; -fx-text-fill: #555;"
+//                    })
+//                }
+//                contact.phones.forEach { (label, number) ->
+//                    val lbl = if (label.isNotBlank()) "\uD83D\uDCDE  $label: $number" else "\uD83D\uDCDE  $number"
+//                    val phoneLbl = Label(lbl).apply {
+//                        style = "-fx-font-size: 13px; -fx-cursor: hand;"
+//                        tooltip = Tooltip("Click to copy")
+//                    }
+//                    phoneLbl.setOnMouseClicked {
+//                        val cb = Clipboard.getSystemClipboard()
+//                        val cc = ClipboardContent(); cc.putString(number); cb.setContent(cc)
+//                        showToast(dialog.dialogPane.scene.window, "Copied: $number")
+//                    }
+//                    card.children.add(phoneLbl)
+//                }
+//                contact.emails.forEach { (label, email) ->
+//                    val lbl = if (label.isNotBlank()) "\u2709\uFE0F  $label: $email" else "\u2709\uFE0F  $email"
+//                    val emailLbl = Label(lbl).apply {
+//                        style = "-fx-font-size: 13px; -fx-cursor: hand;"
+//                        tooltip = Tooltip("Click to copy")
+//                    }
+//                    emailLbl.setOnMouseClicked {
+//                        val cb = Clipboard.getSystemClipboard()
+//                        val cc = ClipboardContent(); cc.putString(email); cb.setContent(cc)
+//                        showToast(dialog.dialogPane.scene.window, "Copied: $email")
+//                    }
+//                    card.children.add(emailLbl)
+//                }
+//                contact.addresses.forEach { addr ->
+//                    if (addr.isNotBlank()) {
+//                        card.children.add(Label("\uD83D\uDCCD  $addr").apply {
+//                            style = "-fx-font-size: 13px; -fx-wrap-text: true; -fx-max-width: 380;"
+//                        })
+//                    }
+//                }
+//                if (contact.note.isNotBlank()) {
+//                    card.children.add(Label("\uD83D\uDCDD  ${contact.note}").apply {
+//                        style = "-fx-font-size: 12px; -fx-text-fill: #666; -fx-wrap-text: true; -fx-max-width: 380;"
+//                    })
+//                }
+//                content.children.add(card)
+//            }
+//        }
+
+        // ── Button row ──
+        // ── Helper: build a nicely-formatted plain-text summary of all contacts ──
+//        fun buildContactText(): String {
+//            val sb = StringBuilder()
+//            for ((idx, c) in contacts.withIndex()) {
+//                if (idx > 0) sb.appendLine()
+//                if (c.fullName.isNotBlank())     sb.appendLine("Name:    ${c.fullName}")
+//                if (c.organization.isNotBlank()) sb.appendLine("Company: ${c.organization}")
+//                c.phones.forEach { (lbl, num) ->
+//                    sb.appendLine(if (lbl.isNotBlank()) "Phone ($lbl): $num" else "Phone: $num")
+//                }
+//                c.emails.forEach { (lbl, email) ->
+//                    sb.appendLine(if (lbl.isNotBlank()) "Email ($lbl): $email" else "Email: $email")
+//                }
+//                c.addresses.forEach { addr -> sb.appendLine("Address: $addr") }
+//                if (c.note.isNotBlank())         sb.appendLine("Note:    ${c.note}")
+//            }
+//            return sb.toString().trimEnd()
+//        }
+
+        val buttonRow = HBox(10.0).apply { alignment = Pos.CENTER_LEFT; padding = Insets(4.0, 0.0, 0.0, 0.0) }
+
+        // ── Helper: build a clean UTF-8 vCard 3.0 string from parsed contact data ──
+        // Samsung exports use Quoted-Printable / v2.1; this writes a clean v3.0 that
+        // WhatsApp, Outlook, Thunderbird, and Android all understand perfectly.
+        fun buildVCard(): String {
+            val sb = StringBuilder()
+            for (c in contacts) {
+                sb.appendLine("BEGIN:VCARD")
+                sb.appendLine("VERSION:3.0")
+                if (c.fullName.isNotBlank()) {
+                    sb.appendLine("FN:${c.fullName}")
+                    // N field: Lastname;Firstname (split on last space for simplicity)
+                    val parts = c.fullName.trim().split(" ")
+                    val last  = parts.lastOrNull() ?: ""
+                    val first = parts.dropLast(1).joinToString(" ")
+                    sb.appendLine("N:$last;$first;;;")
+                }
+                if (c.organization.isNotBlank()) sb.appendLine("ORG:${c.organization}")
+                c.phones.forEach { (lbl, num) ->
+                    val type = when (lbl.lowercase()) {
+                        "mobile", "cell" -> "CELL"
+                        "home"           -> "HOME"
+                        "work"           -> "WORK"
+                        else             -> "VOICE"
+                    }
+                    sb.appendLine("TEL;TYPE=$type:$num")
+                }
+                c.emails.forEach { (lbl, email) ->
+                    val type = when (lbl.lowercase()) {
+                        "home" -> "HOME"; "work" -> "WORK"; else -> "INTERNET"
+                    }
+                    sb.appendLine("EMAIL;TYPE=$type:$email")
+                }
+                c.addresses.forEach { addr -> sb.appendLine("ADR;TYPE=HOME:;;$addr;;;;") }
+                if (c.note.isNotBlank()) sb.appendLine("NOTE:${c.note}")
+                sb.appendLine("END:VCARD")
+            }
+            return sb.toString().trimEnd()
+        }
+
+        // ── Button 1: Export as vCard – share on WhatsApp or any contacts app ──
+        val copyBtn = Button("\uD83D\uDCF2 Export as vCard").apply {
+            style = "-fx-cursor: hand;"
+            tooltip = Tooltip("Saves a clean vCard file and puts it on the clipboard.\nDrag it into WhatsApp (or any app) to share.")
+            setOnAction {
+                try {
+                    val contactName = contacts.firstOrNull()?.fullName?.trim()
+                        ?.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                        ?: "Contact"
+
+                    // 2. בניית השם המבוקש: שם איש הקשר + חותמת האפליקציה
+                    val customFileName = "${contactName}_StreamBridge.vcf"
+
+                    // 3. יצירת הנתיב בתיקיית הזמניים של המערכת
+                    val tempDir = System.getProperty("java.io.tmpdir")
+                    val tempFile = java.io.File(tempDir, customFileName)
+
+                    // Write to a temp file – deleted when the app closes, never opened by People app
+                    tempFile.writeText(buildVCard(), Charsets.UTF_8)
+                    tempFile.deleteOnExit() // מחיקה בסגירת האפליקציה
+
+                    // Put the file on the clipboard so the user can Ctrl+V in WhatsApp Desktop
+                    val cb = Clipboard.getSystemClipboard()
+                    val cc = ClipboardContent()
+                    cc.putFiles(listOf(tempFile))
+                    cb.setContent(cc)
+
+                    showToast(dialog.dialogPane.scene.window,
+                        "Ready!")
+
+                } catch (e: Exception) {
+                    Alert(javafx.scene.control.Alert.AlertType.ERROR).apply {
+                        title = "Export Failed"; contentText = e.message; showAndWait()
+                    }
+                }
+            }
+        }
+
+        // ── Button 2: Save as .txt and open with Notepad ──
+        // A plain-text file opens with Notepad by default on every Windows PC
+        // and stores the contact permanently with no app dependency.
+        val savePdfBtn = Button("\uD83D\uDCC4 Save as PDF").apply {
+            style = "-fx-cursor: hand;"
+            setOnAction {
+                val contact = contacts.firstOrNull() ?: return@setOnAction
+
+                val chooser = FileChooser().apply {
+                    title = "Save Contact as PDF"
+                    initialFileName = "${contact.fullName.ifBlank { "Contact" }}.pdf"
+                    extensionFilters.add(FileChooser.ExtensionFilter("PDF Files (*.pdf)", "*.pdf"))
+
+                    val docs = Paths.get(System.getProperty("user.home"), "Documents").toFile()
+                    if (docs.exists()) initialDirectory = docs
+                }
+
+                val dest = chooser.showSaveDialog(dialog.dialogPane.scene.window) ?: return@setOnAction
+
+                try {
+                    val contactName = contact.fullName.ifBlank { "Contact" }
+                    fun String.rev() = this.reversed()
+                    val htmlContent = StringBuilder().apply {
+                        append("""<?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+                "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                <head>
+                  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+                    <style type="text/css">
+                        body {
+                        font-family: 'Arial', sans-serif;
+                        background-color: #f0f0f0;
+                        padding: 20px;
+                    }
+                    .card {
+                        background: white;
+                        padding: 20px;
+                        border-radius: 12px;
+                        max-width: 460px;
+                        margin: auto;
+                        border: 1px solid #ddd;
+                    }
+                    .name {
+                        color: #0078D7;
+                        font-size: 20px;
+                        font-weight: bold;
+                        text-align: right;          
+                        margin-bottom: 12px;
+                    }
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                    }
+                    td {
+                        padding: 5px 6px;
+                        vertical-align: top; 
+                    }
+                    .lbl {
+                        font-weight: bold;
+                        color: #555;
+                        text-align: left;                        
+                        white-space: nowrap;
+                        width: 1%;
+                        padding-right: 16px;
+                    }
+                    .val {
+                        text-align: right;                        
+                    }
+                    .ltr {
+                        text-align: left;                        
+                    }
+                   .sep  {
+                        border-top: 1px solid #eee;
+                    }                
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                      <div class="name">${contactName.rev()}</div>
+                        <table>
+                """)
+
+                        // שימוש בתוויות באנגלית וסינון שדות ריקים
+                        if (contact.organization.isNotBlank()) {
+                            append("<tr><td class='lbl'>Company:</td><td class='val'>${contact.organization.rev()}</td></tr>")
+                            append("<tr><td colspan='2'><hr/></td></tr>")
+                        }
+//                            append("<div class='field'><span class='label'>Company:</span> ${contact.organization}</div>")
+//                        }
+//                        append("<hr/>")
+
+                        contact.phones.forEach { (label, num) ->
+                            if (num.isNotBlank()) {
+                                val displayLabel = if (label.isNotBlank()) "Phone ($label)" else "Phone"
+                                append("<tr><td class='lbl'>$displayLabel</td><td class='val-ltr'>$num</td></tr>")
+                            }
+                        }
+
+                        contact.emails.forEach { (label, email) ->
+                            if (email.isNotBlank()) {
+                                val displayLabel = if (label.isNotBlank()) "Email ($label)" else "Email"
+                                append("<tr><td class='lbl'>$displayLabel</td><td class='val-ltr'>$email</td></tr>")
+                            }
+                        }
+
+                        contact.addresses.forEach { addr ->
+                            if (addr.isNotBlank()) {
+                                append("<tr><td class='lbl'>Address:</td><td class='val'>$addr</td></tr>")
+                            }
+                        }
+
+                        if (contact.note.isNotBlank()) {
+                            append("<tr><td class=\"lbl\">Notes:</td><td class=\"val\">${contact.note.rev()}</td></tr>")
+                        }
+
+                        append("""
+                        </table>
+                    </div>
+                </body>
+                </html>
+                """)
+                    }.toString()
+
+                    // יצירת ה-PDF
+                    java.io.FileOutputStream(dest).use { os ->
+                        val builder = com.openhtmltopdf.pdfboxout.PdfRendererBuilder()
+
+                        // טעינת פונט Arial תקין שתומך בעברית כדי למנוע סימני #
+                        val fontFile = File("C:/Windows/Fonts/arial.ttf")
+                        if (fontFile.exists()) {
+                            builder.useFont(fontFile, "Arial")
+                        }
+
+                        builder.withHtmlContent(htmlContent, null)
+                        builder.toStream(os)
+                        builder.run()
+                    }
+
+                    Desktop.getDesktop().open(dest)
+                    showToast(dialog.dialogPane.scene.window, "PDF Saved!")
+
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        // ── Edit Contact button ──
+        // Opens a form pre-filled with all contact fields.
+        // On OK: writes changes back into the contact object and redraws the card instantly.
+        val editBtn = Button("\u270F\uFE0F Edit Contact").apply {
+            style = "-fx-cursor: hand;"
+            setOnAction {
+                val contact = contacts.firstOrNull() ?: return@setOnAction
+
+                val editDialog = Dialog<ButtonType>()
+                editDialog.title = "Edit Contact"
+                editDialog.headerText = null
+
+                val grid = GridPane().apply {
+                    hgap = 10.0; vgap = 8.0; padding = Insets(16.0)
+                }
+                var row = 0
+                fun addRow(label: String, initial: String): TextField {
+                    grid.add(Label(label).apply { style = "-fx-font-weight: bold;" }, 0, row)
+                    val tf = TextField(initial).apply { prefWidth = 280.0 }
+                    grid.add(tf, 1, row); row++; return tf
+                }
+
+                val nameField = addRow("Name:", contact.fullName)
+                val orgField  = addRow("Company:", contact.organization)
+
+                val phoneFields = contact.phones.map { (_, num) -> addRow("Phone:", num) }
+                    .toMutableList()
+                    .also { if (it.isEmpty()) it.add(addRow("Phone:", "")) }
+
+                val emailFields = contact.emails.map { (_, email) -> addRow("Email:", email) }
+                    .toMutableList()
+                    .also { if (it.isEmpty()) it.add(addRow("Email:", "")) }
+
+                val addrField = addRow("Address:", contact.addresses.firstOrNull() ?: "")
+                val noteField = addRow("Notes:", contact.note)
+
+                editDialog.dialogPane.content = ScrollPane(grid).apply {
+                    isFitToWidth = true; prefViewportHeight = 380.0
+                }
+                editDialog.dialogPane.prefWidth = 420.0
+                editDialog.dialogPane.buttonTypes.addAll(ButtonType.OK, ButtonType.CANCEL)
+
+                if (editDialog.showAndWait().orElse(null) == ButtonType.OK) {
+                    contact.fullName     = nameField.text.trim()
+                    contact.organization = orgField.text.trim()
+                    contact.note         = noteField.text.trim()
+                    contact.phones.clear()
+                    phoneFields.forEachIndexed { i, tf ->
+                        val num = tf.text.trim()
+                        if (num.isNotBlank()) {
+                            val origLabel = contacts.firstOrNull()?.phones?.getOrNull(i)?.first ?: ""
+                            contact.phones.add(origLabel to num)
+                        }
+                    }
+//                        if (n.text.isNotBlank()) contact.phones.add(l.text.trim() to n.text.trim())
+//                    }
+                    contact.emails.clear()
+                    emailFields.forEachIndexed { i, tf ->
+                        val email = tf.text.trim()
+                        if (email.isNotBlank()) {
+                            val origLabel = contacts.firstOrNull()?.emails?.getOrNull(i)?.first ?: ""
+                            contact.emails.add(origLabel to email)
+                        }
+                    }
+//                        if (e.text.isNotBlank()) contact.emails.add(l.text.trim() to e.text.trim())
+//                    }
+                    contact.addresses.clear()
+                    if (addrField.text.isNotBlank()) contact.addresses.add(addrField.text.trim())
+
+                    // Redraw the card immediately with the updated values
+                    val card = content.children.filterIsInstance<VBox>()
+                        .firstOrNull { it.padding == Insets(12.0) }
+                    card?.let { c ->
+                        c.children.clear()
+                        if (contact.fullName.isNotBlank())
+                            c.children.add(Label(contact.fullName).apply { style = "-fx-font-size: 16px; -fx-font-weight: bold;" })
+                        if (contact.organization.isNotBlank())
+                            c.children.add(Label("\uD83C\uDFE2  ${contact.organization}").apply { style = "-fx-font-size: 12px; -fx-text-fill: #555;" })
+                        contact.phones.forEach { (label, number) ->
+                            c.children.add(Label(if (label.isNotBlank()) "\uD83D\uDCDE  $label: $number" else "\uD83D\uDCDE  $number").apply { style = "-fx-font-size: 13px;" })
+                        }
+                        contact.emails.forEach { (label, email) ->
+                            c.children.add(Label(if (label.isNotBlank()) "\u2709\uFE0F  $label: $email" else "\u2709\uFE0F  $email").apply { style = "-fx-font-size: 13px;" })
+                        }
+                        contact.addresses.forEach { addr ->
+                            if (addr.isNotBlank()) c.children.add(Label("\uD83D\uDCCD  $addr").apply { style = "-fx-font-size: 13px;" })
+                        }
+                        if (contact.note.isNotBlank())
+                            c.children.add(Label("\uD83D\uDCDD  ${contact.note}").apply { style = "-fx-font-size: 12px; -fx-text-fill: #666;" })
+                    }
+                    showToast(dialog.dialogPane.scene.window, "Contact updated!")
+                }
+            }
+        }
+        buttonRow.children.addAll(copyBtn, savePdfBtn, editBtn)
+        content.children.add(buttonRow)
+
+        val scroll = ScrollPane(content).apply {
+            isFitToWidth = true
+            prefViewportHeight = 420.0
+            style = "-fx-background-color: white;"
+        }
+
+        dialog.dialogPane.content = scroll
+        dialog.dialogPane.prefWidth = 460.0
+        dialog.dialogPane.buttonTypes.add(ButtonType.CLOSE)
+        dialog.showAndWait()
+    }
+
+
+//        // "Export VCF" – saves file AND opens containing folder so user can import into Outlook etc.
+//        // (does NOT open the .vcf directly, which would launch the broken People app)
+//        val saveBtn = Button("\uD83D\uDCBE Export VCF for Import...").apply {
+//            style = "-fx-cursor: hand;"
+//            setOnAction {
+//                val chooser = FileChooser().apply {
+//                    title = "Save Contact VCF"
+//                    initialFileName = vcfFile.name
+//                    extensionFilters.add(FileChooser.ExtensionFilter("vCard (*.vcf)", "*.vcf"))
+//                }
+//                val dest = chooser.showSaveDialog(dialog.dialogPane.scene.window)
+//                if (dest != null) {
+//                    vcfFile.copyTo(dest, overwrite = true)
+//                    // Open the folder, NOT the file – avoids opening the broken People app
+//                    try { Desktop.getDesktop().browseFileDirectory(dest) } catch (_: Exception) {
+//                        try { Desktop.getDesktop().open(dest.parentFile) } catch (_: Exception) {}
+//                    }
+//                    showToast(dialog.dialogPane.scene.window,
+//                        "Saved! Import via Outlook or Windows Contacts.")
+//                }
+//            }
+//        }
+//
+//        buttonRow.children.addAll(copyBtn, saveBtn)
+//        content.children.add(buttonRow)
+//
+//        val scroll = ScrollPane(content).apply {
+//            isFitToWidth = true
+//            prefViewportHeight = 420.0
+//            style = "-fx-background-color: white;"
+//        }
+//
+//        dialog.dialogPane.content = scroll
+//        dialog.dialogPane.prefWidth = 460.0
+//        dialog.dialogPane.buttonTypes.add(ButtonType.CLOSE)
+//        dialog.showAndWait()
+//    }
+
+    private fun parseVcf(file: File): List<VcfContact> {
+        val contacts = mutableListOf<VcfContact>()
+        var current: VcfContact? = null
+        var currentKey = ""
+        var currentValue = StringBuilder()
+        var currentIsQP = false   // whether the current field uses Quoted-Printable encoding
+        var currentCharset = "UTF-8"
+
+        /** Decode a Quoted-Printable encoded string to a Unicode string. */
+        fun decodeQP(raw: String, charset: String): String {
+            return try {
+                val bytes = mutableListOf<Byte>()
+                var i = 0
+                while (i < raw.length) {
+                    when {
+                        raw[i] == '=' && i + 2 < raw.length &&
+                                raw[i+1].isLetterOrDigit() && raw[i+2].isLetterOrDigit() -> {
+                            bytes.add(raw.substring(i+1, i+3).toInt(16).toByte())
+                            i += 3
+                        }
+                        else -> { bytes.add(raw[i].code.toByte()); i++ }
+                    }
+                }
+                String(bytes.toByteArray(), charset(charset))
+            } catch (e: Exception) {
+                raw // fallback: return as-is
+            }
+        }
+
+        fun commitLine(key: String, rawValue: String) {
+            val c = current ?: return
+            val keyUpper = key.uppercase()
+            val params = keyUpper.split(";")
+            val baseKey = params[0]
+            val typeParam = params.find { it.startsWith("TYPE=") }?.removePrefix("TYPE=")?.uppercase() ?: ""
+
+            // Decode value: if QP-encoded, decode it; otherwise use as-is
+            val value = if (currentIsQP) decodeQP(rawValue, currentCharset) else rawValue
+
+            when {
+                baseKey == "FN"  -> c.fullName = value.trim()
+                baseKey == "N"    -> {
+                    // N:LastName;FirstName;Middle;Prefix;Suffix  — only fill fullName if FN is empty
+                    if (c.fullName.isBlank()) {
+                        val parts = value.split(";").map { it.trim() }.filter { it.isNotBlank() }
+                        c.fullName = parts.joinToString(" ")
+                    }
+                }
+                baseKey == "ORG" -> c.organization = value.replace(";", " ").trim()
+                baseKey == "NOTE" -> c.note = value.trim()
+                baseKey.startsWith("TEL") -> {
+                    val label = when {
+                        "CELL" in typeParam || "MOBILE" in typeParam -> "Mobile"
+                        "HOME" in typeParam -> "Home"
+                        "WORK" in typeParam -> "Work"
+                        else -> typeParam.lowercase().replaceFirstChar { it.uppercase() }
+                    }
+                    if (value.trim().isNotBlank()) c.phones.add(label to value.trim())
+                }
+                baseKey.startsWith("EMAIL") -> {
+                    val label = when {
+                        "HOME" in typeParam -> "Home"
+                        "WORK" in typeParam -> "Work"
+                        else -> ""
+                    }
+                    if (value.trim().isNotBlank()) c.emails.add(label to value.trim())
+                }
+                baseKey.startsWith("ADR") -> {
+                    val parts = value.split(";").map { it.trim() }.filter { it.isNotBlank() }
+                    val addr = parts.joinToString(", ")
+                    if (addr.isNotBlank()) c.addresses.add(addr)
+                }
+            }
+        }
+
+        // Read raw bytes so we can handle any charset properly
+        val rawLines = file.readLines(Charsets.ISO_8859_1) // read as Latin-1 to preserve raw bytes
+
+        rawLines.forEach { rawLine ->
+            // RFC 2425/6350 line folding: continuation starts with space/tab
+            if ((rawLine.startsWith(" ") || rawLine.startsWith("\t")) && current != null) {
+                // For QP, trim the leading whitespace; for folded lines, just append
+                currentValue.append(rawLine.trimStart())
+                // QP soft line break: if previous line ended with '=', remove it
+                // (handled below when building currentValue)
+                return@forEach
+            }
+
+            // QP soft line break: line ends with '=' means the value continues
+            if (currentIsQP && currentValue.endsWith("=")) {
+                currentValue.deleteCharAt(currentValue.length - 1)
+                currentValue.append(rawLine)
+                return@forEach
+            }
+
+            // Commit the previous accumulated line
+            if (currentKey.isNotBlank()) commitLine(currentKey, currentValue.toString())
+            currentKey = ""; currentValue = StringBuilder()
+            currentIsQP = false; currentCharset = "UTF-8"
+
+            val line = rawLine // keep original (not trimmed) to preserve encoding
+            when {
+                line.trim().equals("BEGIN:VCARD", ignoreCase = true) -> current = VcfContact()
+                line.trim().equals("END:VCARD",   ignoreCase = true) -> {
+                    current?.let { contacts.add(it) }; current = null
+                }
+                line.contains(":") && current != null -> {
+                    val idx = line.indexOf(':')
+                    currentKey   = line.substring(0, idx)
+                    currentValue = StringBuilder(line.substring(idx + 1))
+
+                    // Detect Quoted-Printable encoding in params
+                    val keyUpper = currentKey.uppercase()
+                    currentIsQP = "ENCODING=QUOTED-PRINTABLE" in keyUpper || "ENCODING=QP" in keyUpper
+                    // Detect charset (default UTF-8 for Samsung)
+                    val csMatch = Regex("CHARSET=([A-Za-z0-9_-]+)").find(keyUpper)
+                    if (csMatch != null) currentCharset = csMatch.groupValues[1]
+
+                    // QP soft line break check: if value ends with '=', more lines follow
+                    // (handled at top of next iteration)
+                }
+            }
+        }
+        if (currentKey.isNotBlank()) commitLine(currentKey, currentValue.toString())
+        return contacts
+    }
+
+
+
+//        file.readLines(Charsets.UTF_8).forEach { rawLine ->
+//            if ((rawLine.startsWith(" ") || rawLine.startsWith("\t")) && current != null) {
+//                currentValue.append(rawLine.trimStart())
+//                return@forEach
+//            }
+//            if (currentKey.isNotBlank()) commitLine(currentKey, currentValue.toString())
+//            currentKey = ""; currentValue = StringBuilder()
+//            val line = rawLine.trim()
+//            when {
+//                line.equals("BEGIN:VCARD", ignoreCase = true) -> current = VcfContact()
+//                line.equals("END:VCARD",   ignoreCase = true) -> {
+//                    current?.let { contacts.add(it) }; current = null
+//                }
+//                line.contains(":") && current != null -> {
+//                    val idx = line.indexOf(':')
+//                    currentKey = line.substring(0, idx)
+//                    currentValue = StringBuilder(line.substring(idx + 1))
+//                }
+//            }
+//        }
+//        if (currentKey.isNotBlank()) commitLine(currentKey, currentValue.toString())
+//        return contacts
+//    }
+
+    private data class VcfContact(
+        var fullName: String = "",
+        var organization: String = "",
+        var note: String = "",
+        val phones: MutableList<Pair<String, String>> = mutableListOf(),
+        val emails: MutableList<Pair<String, String>> = mutableListOf(),
+        val addresses: MutableList<String> = mutableListOf()
+    )
 }
 
 //    // Share file (open in file explorer)

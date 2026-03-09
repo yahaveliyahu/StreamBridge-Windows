@@ -9,6 +9,7 @@ version = "1.0"
 
 repositories {
     mavenCentral()
+    maven { url = uri("https://jitpack.io") }
 }
 
 dependencies {
@@ -38,6 +39,11 @@ dependencies {
     implementation("org.jmdns:jmdns:3.5.8")
 
     implementation("org.slf4j:slf4j-simple:1.7.36")
+
+    implementation("com.drewnoakes:metadata-extractor:2.18.0")
+
+    implementation("com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10")
+    implementation("com.openhtmltopdf:openhtmltopdf-rtl-support:1.0.10")
 }
 
 javafx {
