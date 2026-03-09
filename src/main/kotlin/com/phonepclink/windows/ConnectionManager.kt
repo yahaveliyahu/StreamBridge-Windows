@@ -28,6 +28,7 @@ class ConnectionManager {
     // Callbacks - functions that will be triggered when things happen
     var onConnectionChanged: ((Boolean) -> Unit)? = null
     var onChatMessageReceived: ((ChatMessage) -> Unit)? = null // Receive a new message
+    var onDeleteMessage: ((Long) -> Unit)? = null              // Receive a delete by timestamp
 
     private var isConnected = false
 
@@ -89,6 +90,10 @@ class ConnectionManager {
                                         isIncoming = true
                                     )
                                     onChatMessageReceived?.invoke(msg)
+                                } else if (msgType == "DELETE") {
+                                    // Phone deleted a message – notify FileExplorer to remove it
+                                    val ts = json.optLong("timestamp", -1L)
+                                    if (ts >= 0) onDeleteMessage?.invoke(ts)
                                 }
                             }
                         } catch (e: Exception) {
@@ -295,7 +300,7 @@ class ConnectionManager {
             // Using URI to encode Hebrew and spaces legally
             // המבנה: scheme, authority (host:port), path, query, fragment
             val uri = URI("http", null, phoneIP, 8080, path, null, null)
-            val url = uri.toASCIIString() // This turns "Settings" into %D7%94..
+            val url = uri.toASCIIString() // This turns "Settings" into %D7%94
 
             // אם הנתיב כבר מתחיל ב-http, משתמשים בו, אחרת בונים אותו
 //            val url = if (path.startsWith("http")) path else "http://$phoneIP:8080$path"
@@ -321,6 +326,19 @@ class ConnectionManager {
             put("timestamp", msg.timestamp)
         }
 
+        try {
+            webSocketClient?.send(json.toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun sendDeleteMessage(timestamp: Long) {
+        if (!isConnected || webSocketClient == null) return
+        val json = JSONObject().apply {
+            put("type", "DELETE")
+            put("timestamp", timestamp)
+        }
         try {
             webSocketClient?.send(json.toString())
         } catch (e: Exception) {

@@ -74,6 +74,17 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             }
         }
 
+        // Phone deleted a message – remove the matching bubble on the Windows side
+        connectionManager.onDeleteMessage = { timestamp ->
+            Platform.runLater {
+                val item = chatListView.items.firstOrNull { it.timestamp == timestamp }
+                if (item != null) {
+                    chatListView.items.remove(item)
+                    historyManager.deleteMessage(item)
+                }
+            }
+        }
+
         // Setting button actions
         sendButton.setOnAction { sendMessage() }
         messageInput.setOnKeyPressed { if (it.code == KeyCode.ENTER) sendMessage() }
@@ -616,11 +627,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         val deleteItem = MenuItem("Delete").apply {
             setOnAction {
                 showDeleteConfirmation(msg)
-
-                val window = bubble.scene.window
-                if (window != null) {
-                    showToast(window, "The message has been deleted!")
-                }
             }
         }
 
@@ -668,11 +674,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         val deleteItem = MenuItem("Delete").apply {
             setOnAction {
                 showDeleteConfirmation(msg)
-
-                val window = bubble.scene.window
-                if (window != null) {
-                    showToast(window, "The message has been deleted!")
-                }
             }
         }
 
@@ -705,6 +706,14 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 
     // Show delete confirmation dialog
     private fun showDeleteConfirmation(msg: ChatMessage) {
+        if (!connectionManager.isConnected()) {
+            val alert = Alert(javafx.scene.control.Alert.AlertType.WARNING)
+            alert.title = "Not Connected"
+            alert.headerText = null
+            alert.contentText = "To delete this message, first connect to the other side."
+            alert.showAndWait()
+            return
+        }
         val alert = Alert(javafx.scene.control.Alert.AlertType.CONFIRMATION)
         alert.title = "Delete Message"
         alert.headerText = "Are you sure you want to delete this message?"
@@ -778,8 +787,14 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             // Remove from history
             historyManager.deleteMessage(msg)
 
+            // Show toast only now – after the deletion is confirmed and done
+            val window = chatListView.scene?.window
+            if (window != null) showToast(window, "The message has been deleted!")
+
             println("Message deleted: ${msg.id}")
         }
+        // Notify the phone so it deletes the same message there
+        connectionManager.sendDeleteMessage(msg.timestamp)
     }
 
     private fun copyFile(msg: ChatMessage) {
@@ -1087,7 +1102,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 
                     // 3. יצירת הנתיב בתיקיית הזמניים של המערכת
                     val tempDir = System.getProperty("java.io.tmpdir")
-                    val tempFile = java.io.File(tempDir, customFileName)
+                    val tempFile = File(tempDir, customFileName)
 
                     // Write to a temp file – deleted when the app closes, never opened by People app
                     tempFile.writeText(buildVCard(), Charsets.UTF_8)
