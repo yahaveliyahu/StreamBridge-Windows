@@ -158,7 +158,7 @@ class MainApp : Application() {
                     disconnectButton.isDisable = false
                     ipTextField.isDisable = true
 
-                    // ✅ Auto-start camera streaming when connected
+                    // Auto-start camera streaming when connected
                     println("MainApp: Connection established, starting camera stream...")
                     cameraView.startStreamingFromMainApp()
 
@@ -169,7 +169,7 @@ class MainApp : Application() {
                     disconnectButton.isDisable = true
                     ipTextField.isDisable = false
 
-                    // ✅ Stop streaming when disconnected
+                    // Stop streaming when disconnected
                     println("MainApp: Disconnected, stopping camera stream...")
                     cameraView.stopStreamingFromMainApp()
                 }
@@ -214,6 +214,15 @@ class MainApp : Application() {
     private fun setupDiscoveryCallbacks() {
         discoveryManager.onDeviceFound = { deviceName, deviceIp, devicePort ->
             javafx.application.Platform.runLater {
+                // Stop discovery immediately — we found a device and the user is deciding.
+                // This also prevents any further duplicate serviceResolved callbacks from
+                // popping up a second dialog while the first one is still open.
+                discoveryManager.stopDiscovery()
+                javafx.application.Platform.runLater {
+                    autoDiscoverButton.isDisable = false
+                    autoDiscoverButton.text = "🔍 Auto-Discover Devices"
+                }
+
                 val alert = Alert(Alert.AlertType.CONFIRMATION)
                 alert.title = "Device Found"
                 alert.headerText = "Found: $deviceName"

@@ -56,7 +56,8 @@ class ConnectionManager {
                     println("WebSocket connected")
                     isConnected = true
                     // Returning the real computer name (DESKTOP-XXXX)
-                    val pcName = try { InetAddress.getLocalHost().hostName } catch (e:Exception) { "PC" }
+                    val pcName = System.getProperty("user.name")?.let { "$it's PC" } ?: "StreamBridge-windows"
+//                    val pcName = try { InetAddress.getLocalHost().hostName } catch (e:Exception) { "PC" }
                     val json = JSONObject().apply {
                         put("type", "HANDSHAKE")
                         put("name", pcName)
@@ -102,58 +103,6 @@ class ConnectionManager {
                         }
                     }
                 }
-//                override fun onMessage(message: String?) {
-//                    message?.let {
-//                        try {
-//                            if (it.trim().startsWith("{")) {
-//                                val json = JSONObject(it)
-//                                val msgTypeStr = json.optString("type", "TEXT")
-//
-//                                if (msgTypeStr == "FILE_TRANSFER") {
-//                                    val fileName = json.getString("fileName")
-//                                    val downloadPath = json.getString("downloadPath")
-//                                    val size = json.getLong("fileSize")
-//                                    val mime = json.optString("mimeType", "application/octet-stream")
-//
-//                                    val downloadedBytes = downloadFile(downloadPath)
-//
-//                                    if (downloadedBytes != null) {
-//                                        val downloadsDir = File(System.getProperty("user.home"), "Downloads/StreamBridge")
-//                                        if (!downloadsDir.exists()) downloadsDir.mkdirs()
-//
-//                                        val destFile = File(downloadsDir, fileName)
-//                                        destFile.writeBytes(downloadedBytes)
-//
-//                                        println("File saved to: ${destFile.absolutePath}")
-//
-//                                        val msg = ChatMessage(
-//                                            text = null,
-//                                            filePath = destFile.absolutePath,
-//                                            fileName = fileName,
-//                                            fileSize = size,
-//                                            type = determineMessageType(mime),
-//                                            timestamp = json.optLong("timestamp", System.currentTimeMillis()),
-//                                            isIncoming = true
-//                                        )
-//                                        onChatMessageReceived?.invoke(msg)
-//                                    }
-//                                }
-//                                else {
-//                                    val msg = ChatMessage(
-//                                        text = json.optString("text", ""),
-//                                        type = try { MessageType.valueOf(msgTypeStr) } catch(e:Exception){ MessageType.TEXT },
-//                                        timestamp = json.optLong("timestamp", System.currentTimeMillis()),
-//                                        isIncoming = true
-//                                    )
-//                                    onChatMessageReceived?.invoke(msg)
-//                                }
-//                            }
-//                        } catch (e: Exception) {
-//                            println("Error parsing message: ${e.message}")
-//                            e.printStackTrace()
-//                        }
-//                    }
-//                }
 
                 override fun onClose(code: Int, reason: String?, remote: Boolean) {
                     println("WebSocket closed: $reason")
