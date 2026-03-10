@@ -56,7 +56,8 @@ class ConnectionManager {
                     println("WebSocket connected")
                     isConnected = true
                     // Returning the real computer name (DESKTOP-XXXX)
-                    val pcName = System.getProperty("user.name")?.let { "$it's PC" } ?: "StreamBridge-windows"
+//                    val pcName = System.getProperty("user.name")?.let { "$it's PC" } ?: "StreamBridge-windows"
+                    val pcName = getComputerName()
 //                    val pcName = try { InetAddress.getLocalHost().hostName } catch (e:Exception) { "PC" }
                     val json = JSONObject().apply {
                         put("type", "HANDSHAKE")
@@ -380,7 +381,22 @@ class ConnectionManager {
     }
 
     fun isConnected(): Boolean = isConnected
+
+    companion object {
+        /**
+         * Returns the real Windows computer name (e.g. "DESKTOP-025G0LF").
+         * Priority order:
+         *   1. COMPUTERNAME env var  — set directly by Windows, always correct
+         *   2. InetAddress.localHost — works on most machines but can fail
+         *   3. "StreamBridge-Windows"                  — last-resort fallback
+         */
+        fun getComputerName(): String =
+            System.getenv("COMPUTERNAME")?.takeIf { it.isNotBlank() }
+                ?: try { InetAddress.getLocalHost().hostName } catch (_: Exception) { null }
+                ?: "StreamBridge-Windows"
+    }
 }
+
 
 
 

@@ -230,7 +230,8 @@ class MainApp : Application() {
 
                 val result = alert.showAndWait()
                 if (result.isPresent && result.get() == ButtonType.OK) {
-                    val pcName = System.getProperty("user.name") + "'s PC"
+//                    val pcName = System.getProperty("user.name") + "'s PC"
+                    val pcName = ConnectionManager.getComputerName()  // e.g. "DESKTOP-025G0LF"
                     discoveryManager.requestPairing(deviceIp, pcName) { approved, phoneName ->
                         javafx.application.Platform.runLater {
                             if (approved) {
