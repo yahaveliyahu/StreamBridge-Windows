@@ -18,12 +18,8 @@ class ConnectionManager {
     private var phoneIP: String = ""
     private var webSocketClient: WebSocketClient? = null
 
-    // HTTP client for downloading files
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(120, TimeUnit.SECONDS)
-        .build()
+    // Rebuilt on each connect() call with the appropriate SSL trust policy.
+    private var httpClient: OkHttpClient = buildHttpClient()
 
     // Callbacks - functions that will be triggered when things happen
     var onConnectionChanged: ((Boolean) -> Unit)? = null
@@ -32,8 +28,13 @@ class ConnectionManager {
 
     private var isConnected = false
 
+    // ── Connection ───────────────────────────────────────────────────────────────
+
     fun connect(ip: String) {
         phoneIP = ip
+        // Rebuild the HTTP client every time we connect so it always uses the
+        // most recently saved certificate (in case the user just paired).
+        httpClient = buildHttpClient()
         connectWebSocket()
     }
 
@@ -49,16 +50,43 @@ class ConnectionManager {
 
     private fun connectWebSocket() {
         try {
-            val uri = URI("ws://$phoneIP:8081") // Connecting to the phone's WebSocket port
+            // ── Always WSS (encrypted) ─────────────────────────────────────────
+            // If a cert was saved during pairing we use cert-pinned TLS.
+            // If no cert yet (very first run) we use trust-all TLS — still
+            // encrypted, just not yet authenticated.
+            val sslContext = CertStore.buildPinnedSSLContext()
+                ?: CertStore.buildTrustAllSSLContext()
+
+            val wrappedFactory = CertStore.NoHostnameVerificationSocketFactory(
+                sslContext.socketFactory
+            )
+            val uri = URI("wss://$phoneIP:8081") // Connecting to the phone's WebSocket secure port
 
             webSocketClient = object : WebSocketClient(uri) {
+
+                override fun onSetSSLParameters(sslParameters: javax.net.ssl.SSLParameters) {
+                    // Intentionally empty — disables java-websocket's forced HTTPS hostname
+                    // verification. Authentication is handled by cert pinning in CertStore instead.
+                }
+
                 override fun onOpen(handshakedata: ServerHandshake?) {
-                    println("WebSocket connected")
+                    // ── Verify TLS is actually active ────────────────────────────────────
+                    val sslSocket = webSocketClient?.socket as? javax.net.ssl.SSLSocket
+                    val tlsSession = sslSocket?.session
+                    if (tlsSession != null) {
+                        println("✅ TLS active")
+                        println("   Protocol:     ${tlsSession.protocol}")      // e.g. TLSv1.3
+                        println("   Cipher suite: ${tlsSession.cipherSuite}")   // e.g. TLS_AES_256_GCM_SHA384
+                    } else {
+                        println("⚠️ WARNING: TLS is NOT active — connection is unencrypted!")
+                    }
+
+                    // ─────────────────────────────────────────────────────────────────────
+
+                    println("WebSocket secure connected (TLS)")
                     isConnected = true
-                    // Returning the real computer name (DESKTOP-XXXX)
-//                    val pcName = System.getProperty("user.name")?.let { "$it's PC" } ?: "StreamBridge-windows"
+                    // Returning the real computer name
                     val pcName = getComputerName()
-//                    val pcName = try { InetAddress.getLocalHost().hostName } catch (e:Exception) { "PC" }
                     val json = JSONObject().apply {
                         put("type", "HANDSHAKE")
                         put("name", pcName)
@@ -87,7 +115,6 @@ class ConnectionManager {
                                     val msg = ChatMessage(
                                         text = json.optString("text", ""),
                                         type = MessageType.TEXT,
-//                                        type = try { MessageType.valueOf(msgTypeStr) } catch(e:Exception){ MessageType.TEXT },
                                         timestamp = timestamp,
                                         isIncoming = true
                                     )
@@ -117,12 +144,38 @@ class ConnectionManager {
                     onConnectionChanged?.invoke(false)
                 }
             }
-            webSocketClient?.connect()
+            webSocketClient?.setSocketFactory(wrappedFactory)
+            // 10-second TCP connect timeout — without this, java-websocket's default
+            // is 0 (infinite).  If port 8081 is reachable at the TCP layer but the
+            // TLS handshake stalls, onError would never fire and the connection hangs
+            // silently.  connectBlocking() is called on a new thread so we don't block
+            // the caller; any failure goes through the normal onError / catch paths.
+            Thread {
+                try {
+                    val connected = webSocketClient?.connectBlocking(10, java.util.concurrent.TimeUnit.SECONDS) ?: false
+                    if (!connected) {
+                        println("WebSocket: connectBlocking timed out or returned false — check port 8081")
+                        onConnectionChanged?.invoke(false)
+                    }
+                } catch (e: Exception) {
+                    println("WebSocket: connectBlocking threw — ${e.javaClass.simpleName}: ${e.message}")
+                    e.printStackTrace()
+                    onConnectionChanged?.invoke(false)
+                }
+            }.start()
         } catch (e: Exception) {
             e.printStackTrace()
             onConnectionChanged?.invoke(false)
         }
     }
+//            webSocketClient?.connect()
+//        } catch (e: Exception) {
+//            e.printStackTrace()
+//            onConnectionChanged?.invoke(false)
+//        }
+//    }
+
+    // ── Incoming message handling ────────────────────────────────────────────────
 
     // A function that contains the download logic (called from the Thread)
     private fun handleIncomingFile(json: JSONObject) {
@@ -131,7 +184,7 @@ class ConnectionManager {
             val downloadPath = json.getString("downloadPath")
             val size = json.getLong("fileSize")
             val mime = json.optString("mimeType", "file/*")
-//            val mime = json.optString("mimeType", "application/octet-stream")
+
             // Downloads the file to a temporary folder in memory (does not automatically save to disk)
             val bytes = downloadFile(downloadPath)
             if (bytes != null) {
@@ -168,27 +221,11 @@ class ConnectionManager {
                 val permanentFile = File(streamBridgeDir, uniqueName)
                 permanentFile.writeBytes(bytes)
 
-                println("✅ File saved permanently to: ${permanentFile.absolutePath}")
-
-//                val tempDir = File(System.getProperty("java.io.tmpdir"), "StreamBridge")
-//                if (!tempDir.exists()) tempDir.mkdirs()
-//                val tempFile = File(tempDir, fileName)
-//                tempFile.writeBytes(bytes)
-//                receivedTempFiles[fileName] = tempFile
-//            val downloadedBytes = downloadFile(downloadPath)
-//            if (downloadedBytes != null) {
-//                val downloadsDir = File(System.getProperty("user.home"), "Downloads/StreamBridge")
-//                if (!downloadsDir.exists()) {
-//                    downloadsDir.mkdirs()
-//                }
-//                val destFile = File(downloadsDir, fileName)
-//                destFile.writeBytes(downloadedBytes)
-//                println("File saved to: ${destFile.absolutePath}")
+                println("File saved permanently to: ${permanentFile.absolutePath}")
 
                 // Create a message to display in chat
                 val msg = ChatMessage(
-//                    text = null,
-                    filePath = permanentFile.absolutePath, // נתיב לקובץ הזמני
+                    filePath = permanentFile.absolutePath, // Path to the temporary file
                     remotePath = downloadPath,
                     fileName = fileName, // Keep original name for display
                     fileSize = size,
@@ -207,24 +244,6 @@ class ConnectionManager {
         }
     }
 
-
-
-//    fun fetchFileList(): String? {
-//        if (phoneIP.isEmpty()) return null
-//        return try {
-//            val request = Request.Builder()
-//                .url("http://$phoneIP:8080/files")
-//                .build()
-//            httpClient.newCall(request).execute().use { response ->
-//                if (response.isSuccessful) response.body?.string() else null
-//            }
-//        } catch (e: Exception) {
-//            e.printStackTrace()
-//            null
-//        }
-//    }
-
-
     // Checking if it is really a JPEG by signature (magic bytes)
     private fun isJpeg(bytes: ByteArray): Boolean =
         bytes.size >= 3 &&
@@ -242,6 +261,32 @@ class ConnectionManager {
                 head.contains("exception")
     }
 
+    // ── HTTP helpers ─────────────────────────────────────────────────────────────
+
+    /**
+     * Builds an OkHttpClient configured for TLS with the phone's certificate.
+     * Uses cert pinning if a cert was saved during pairing; falls back to
+     * trust-all TLS otherwise (still encrypted).
+     */
+    private fun buildHttpClient(): OkHttpClient {
+        val trustManager = CertStore.buildPinnedTrustManager()
+            ?: CertStore.buildTrustAllTrustManager()
+        val sslContext   = CertStore.buildPinnedSSLContext()
+            ?: CertStore.buildTrustAllSSLContext()
+
+        return OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .writeTimeout(120, TimeUnit.SECONDS)
+            // Provide both socketFactory and trustManager so OkHttp's internal
+            // validation uses our custom trust policy.
+            .sslSocketFactory(sslContext.socketFactory, trustManager)
+            // The phone's cert has CN=StreamBridge, not an IP address, so standard
+            // hostname verification would fail.  We authenticate via cert pinning.
+            .hostnameVerifier { _, _ -> true }
+            .build()
+    }
+
     fun downloadFile(path: String): ByteArray? {
         if (phoneIP.isEmpty()) return null
         // Preventing a crash if the path is incorrect
@@ -249,11 +294,8 @@ class ConnectionManager {
         return try {
             // Using URI to encode Hebrew and spaces legally
             // המבנה: scheme, authority (host:port), path, query, fragment
-            val uri = URI("http", null, phoneIP, 8080, path, null, null)
+            val uri = URI("https", null, phoneIP, 8080, path, null, null)
             val url = uri.toASCIIString() // This turns "Settings" into %D7%94
-
-            // אם הנתיב כבר מתחיל ב-http, משתמשים בו, אחרת בונים אותו
-//            val url = if (path.startsWith("http")) path else "http://$phoneIP:8080$path"
 
             // In case of spaces or special characters in the URL, it is better to encode
             val request = Request.Builder().url(url).build()
@@ -266,36 +308,6 @@ class ConnectionManager {
         }
     }
 
-    // Send a chat message from your computer to your phone
-    fun sendChatMessage(msg: ChatMessage) {
-        if (!isConnected || webSocketClient == null) return
-
-        val json = JSONObject().apply {
-            put("text", msg.text)
-            put("type", msg.type.name)
-            put("timestamp", msg.timestamp)
-        }
-
-        try {
-            webSocketClient?.send(json.toString())
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun sendDeleteMessage(timestamp: Long) {
-        if (!isConnected || webSocketClient == null) return
-        val json = JSONObject().apply {
-            put("type", "DELETE")
-            put("timestamp", timestamp)
-        }
-        try {
-            webSocketClient?.send(json.toString())
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
     fun uploadFile(file: File, type: MessageType) {
         if (phoneIP.isEmpty()) return
         Thread { // Upload in the background
@@ -305,9 +317,9 @@ class ConnectionManager {
                     .addFormDataPart("file", file.name, file.asRequestBody(mediaType))
                     .addFormDataPart("type", type.name)
                     .build()
-//                val request = Request.Builder().url("http://$phoneIP:8080/upload").post(requestBody).build()
+
                 val encoded = java.net.URLEncoder.encode(file.name, "UTF-8")
-                val url = "http://$phoneIP:8080/upload?name=$encoded"
+                val url = "https://$phoneIP:8080/upload?name=$encoded"
 
                 val request = Request.Builder()
                     .url(url)
@@ -325,7 +337,7 @@ class ConnectionManager {
     fun fetchCameraFrame(): ByteArray? {
         if (phoneIP.isEmpty()) return null
 
-        val url = "http://$phoneIP:8080/camera"
+        val url = "https://$phoneIP:8080/camera"
 //        println("fetchCameraFrame -> GET $url")
 
         val request = Request.Builder()
@@ -351,25 +363,36 @@ class ConnectionManager {
         }
     }
 
-//                val code = resp.code
-//                val ct = resp.header("Content-Type")
-//                println("fetchCameraFrame <- code=$code contentType=$ct")
-//                if (code == 204) return null
-//                if (!resp.isSuccessful) return null
-//                val bytes = resp.body?.bytes() ?: return null
-//                println("fetchCameraFrame <- bytes=${bytes.size}")
-//                if (ct?.startsWith("image/") != true) return null
-//                bytes
-//            }
-//        } catch (e: Exception) {
-//            e.printStackTrace()
-//            null
-//        }
-//    }
+    // ── Outgoing messages ────────────────────────────────────────────────────────
 
-//            httpClient.newCall(request).execute().use { it.body?.bytes() }
-//        } catch (e: Exception) { null }
-//    }
+    // Send a chat message from your computer to your phone
+    fun sendChatMessage(msg: ChatMessage) {
+        if (!isConnected || webSocketClient == null) return
+
+        try {
+            webSocketClient?.send(
+                JSONObject().apply {
+                    put("text", msg.text)
+                    put("type", msg.type.name)
+                    put("timestamp", msg.timestamp)
+                }.toString()
+            )
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+
+    fun sendDeleteMessage(timestamp: Long) {
+        if (!isConnected || webSocketClient == null) return
+        try {
+            webSocketClient?.send(
+                JSONObject().apply {
+                    put("type", "DELETE")
+                    put("timestamp", timestamp)
+                }.toString()
+            )
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+
+    // ── Utilities ────────────────────────────────────────────────────────────────
 
     private fun determineMessageType(mime: String): MessageType {
         return when {
@@ -396,141 +419,3 @@ class ConnectionManager {
                 ?: "StreamBridge-Windows"
     }
 }
-
-
-
-
-
-
-//class ConnectionManager {
-//    private var phoneIP: String = ""
-//    private var webSocketClient: WebSocketClient? = null
-//    private val httpClient = OkHttpClient.Builder()
-//        .connectTimeout(5, TimeUnit.SECONDS)
-//        .readTimeout(10, TimeUnit.SECONDS)
-//        .build()
-//
-//    var onConnectionChanged: ((Boolean) -> Unit)? = null
-//    var onMessageReceived: ((String) -> Unit)? = null
-//
-//    private var isConnected = false
-//
-//    fun connect(ip: String) {
-//        phoneIP = ip
-//        connectWebSocket()
-//    }
-//
-//    private fun connectWebSocket() {
-//        try {
-//            val uri = URI("ws://$phoneIP:8081")
-//
-//            webSocketClient = object : WebSocketClient(uri) {
-//                override fun onOpen(handshakedata: ServerHandshake?) {
-//                    println("WebSocket connected")
-//                    isConnected = true
-//                    onConnectionChanged?.invoke(true)
-//                }
-//
-//                override fun onMessage(message: String?) {
-//                    message?.let {
-//                        println("Received: $it")
-//                        onMessageReceived?.invoke(it)
-//                    }
-//                }
-//
-//                override fun onClose(code: Int, reason: String?, remote: Boolean) {
-//                    println("WebSocket closed: $reason")
-//                    isConnected = false
-//                    onConnectionChanged?.invoke(false)
-//                }
-//
-//                override fun onError(ex: Exception?) {
-//                    println("WebSocket error: ${ex?.message}")
-//                    isConnected = false
-//                    onConnectionChanged?.invoke(false)
-//                }
-//            }
-//
-//            webSocketClient?.connect()
-//        } catch (e: Exception) {
-//            println("Error connecting: ${e.message}")
-//            onConnectionChanged?.invoke(false)
-//        }
-//    }
-//
-//    fun disconnect() {
-//        webSocketClient?.close()
-//        isConnected = false
-//        onConnectionChanged?.invoke(false)
-//    }
-//
-//    fun sendCommand(command: String) {
-//        if (isConnected) {
-//            webSocketClient?.send(command)
-//        }
-//    }
-//
-//    fun fetchCameraFrame(): ByteArray? {
-//        if (!isConnected) return null
-//
-//        return try {
-//            val request = Request.Builder()
-//                .url("http://$phoneIP:8080/camera")
-//                .build()
-//
-//            val response = httpClient.newCall(request).execute()
-//            if (response.isSuccessful) {
-//                response.body?.bytes()
-//            } else {
-//                null
-//            }
-//        } catch (e: Exception) {
-//            println("Error fetching camera frame: ${e.message}")
-//            null
-//        }
-//    }
-//
-//    fun fetchFileList(): String? {
-//        if (!isConnected) return null
-//
-//        return try {
-//            val request = Request.Builder()
-//                .url("http://$phoneIP:8080/file-list")
-//                .build()
-//
-//            val response = httpClient.newCall(request).execute()
-//            if (response.isSuccessful) {
-//                response.body?.string()
-//            } else {
-//                null
-//            }
-//        } catch (e: Exception) {
-//            println("Error fetching file list: ${e.message}")
-//            null
-//        }
-//    }
-//
-//    fun downloadFile(filePath: String): ByteArray? {
-//        if (!isConnected) return null
-//
-//        return try {
-//            val request = Request.Builder()
-//                .url("http://$phoneIP:8080/files$filePath")
-//                .build()
-//
-//            val response = httpClient.newCall(request).execute()
-//            if (response.isSuccessful) {
-//                response.body?.bytes()
-//            } else {
-//                null
-//            }
-//        } catch (e: Exception) {
-//            println("Error downloading file: ${e.message}")
-//            null
-//        }
-//    }
-//
-//    fun isConnected(): Boolean = isConnected
-//
-//    fun getPhoneIP(): String = phoneIP
-//}

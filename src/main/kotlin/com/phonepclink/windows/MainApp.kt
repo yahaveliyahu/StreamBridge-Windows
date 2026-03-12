@@ -34,25 +34,35 @@ class MainApp : Application() {
 
         // Create UI
         val root = createUI()
-
         val scene = Scene(root, 1000.0, 700.0)
         primaryStage.scene = scene
         primaryStage.show()
 
         // Setup connection callbacks
         setupConnectionCallbacks()
-
         // Setup discovery callbacks
         setupDiscoveryCallbacks()
 
-        discoveryManager.startQrListener { phoneIp ->
+        // ── QR listener ───────────────────────────────────────────────────────
+
+        // Callback now receives (phoneIp, certBase64?).
+        // Save the cert immediately so the very first encrypted connection
+        // from connect() already uses the pinned certificate.
+
+        discoveryManager.startQrListener { phoneIp, certBase64 ->
             javafx.application.Platform.runLater {
+                if (certBase64 != null) {
+                    CertStore.saveCert(certBase64)
+                    println("MainApp: phone cert pinned from QR scan")
+                }
                 ipTextField.text = phoneIp
                 connect()
                 showAlert("QR Scan Detected!\nConnecting to $phoneIp...", Alert.AlertType.INFORMATION)
             }
         }
     }
+
+    // ── UI construction ──────────────────────────────────────────────────────────
 
     private fun createUI(): BorderPane {
         val root = BorderPane()
@@ -134,6 +144,8 @@ class MainApp : Application() {
         return vbox
     }
 
+    // ── Connect / Disconnect ─────────────────────────────────────────────────────
+
     private fun connect() {
         val ip = ipTextField.text
         if (ip.isBlank()) {
@@ -147,6 +159,8 @@ class MainApp : Application() {
     private fun disconnect() {
         connectionManager.disconnect()
     }
+
+    // ── Callbacks ────────────────────────────────────────────────────────────────
 
     private fun setupConnectionCallbacks() {
         connectionManager.onConnectionChanged = { connected ->
@@ -177,6 +191,51 @@ class MainApp : Application() {
         }
     }
 
+    private fun setupDiscoveryCallbacks() {
+        discoveryManager.onDeviceFound = { deviceName, deviceIp, devicePort ->
+            javafx.application.Platform.runLater {
+                // Stop discovery immediately — we found a device and the user is deciding.
+                // This also prevents any further duplicate serviceResolved callbacks from
+                // popping up a second dialog while the first one is still open.
+                discoveryManager.stopDiscovery()
+                autoDiscoverButton.isDisable = false
+                autoDiscoverButton.text = "🔍 Auto-Discover Devices"
+
+
+                val alert = Alert(Alert.AlertType.CONFIRMATION)
+                alert.title = "Device Found"
+                alert.headerText = "Found: $deviceName"
+                alert.contentText = "IP: $deviceIp:$devicePort\n\nConnect to this device?"
+
+                val result = alert.showAndWait()
+                if (result.isPresent && result.get() == ButtonType.OK) {
+                    val pcName = ConnectionManager.getComputerName()
+
+                    // ── Only TLS addition: callback now carries certBase64 ─────────
+                    discoveryManager.requestPairing(deviceIp, pcName) { approved, phoneName, certBase64 ->
+                        javafx.application.Platform.runLater {
+                            if (approved) {
+                                // Save cert BEFORE connect() so the connection is
+                                // immediately cert-pinned.
+                                if (certBase64 != null) {
+                                    CertStore.saveCert(certBase64)
+                                    println("MainApp: phone cert pinned from Auto-Discover")
+                                }
+                                ipTextField.text = deviceIp
+                                connect()
+                                showAlert("Connected to ${phoneName ?: deviceName}", Alert.AlertType.INFORMATION)
+                            } else {
+                                showAlert("Connection denied by phone", Alert.AlertType.WARNING)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── QR code display ──────────────────────────────────────────────────────────
+
     private fun showQRCode() {
         val pcIp = qrCodeGenerator.getLocalIPAddress()
         val pcName = System.getProperty("user.name") + "'s PC"
@@ -193,6 +252,8 @@ class MainApp : Application() {
         dialog.graphic = imageView
         dialog.showAndWait()
     }
+
+    // ── Auto-discover ────────────────────────────────────────────────────────────
 
     private fun startAutoDiscovery() {
         autoDiscoverButton.isDisable = true
@@ -211,42 +272,7 @@ class MainApp : Application() {
         }
     }
 
-    private fun setupDiscoveryCallbacks() {
-        discoveryManager.onDeviceFound = { deviceName, deviceIp, devicePort ->
-            javafx.application.Platform.runLater {
-                // Stop discovery immediately — we found a device and the user is deciding.
-                // This also prevents any further duplicate serviceResolved callbacks from
-                // popping up a second dialog while the first one is still open.
-                discoveryManager.stopDiscovery()
-                javafx.application.Platform.runLater {
-                    autoDiscoverButton.isDisable = false
-                    autoDiscoverButton.text = "🔍 Auto-Discover Devices"
-                }
-
-                val alert = Alert(Alert.AlertType.CONFIRMATION)
-                alert.title = "Device Found"
-                alert.headerText = "Found: $deviceName"
-                alert.contentText = "IP: $deviceIp:$devicePort\n\nConnect to this device?"
-
-                val result = alert.showAndWait()
-                if (result.isPresent && result.get() == ButtonType.OK) {
-//                    val pcName = System.getProperty("user.name") + "'s PC"
-                    val pcName = ConnectionManager.getComputerName()  // e.g. "DESKTOP-025G0LF"
-                    discoveryManager.requestPairing(deviceIp, pcName) { approved, phoneName ->
-                        javafx.application.Platform.runLater {
-                            if (approved) {
-                                ipTextField.text = deviceIp
-                                connect()
-                                showAlert("Connected to ${phoneName ?: deviceName}", Alert.AlertType.INFORMATION)
-                            } else {
-                                showAlert("Connection denied by phone", Alert.AlertType.WARNING)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // ── Helpers ──────────────────────────────────────────────────────────────────
 
     private fun showAlert(message: String, type: Alert.AlertType = Alert.AlertType.WARNING) {
         val alert = Alert(type)
