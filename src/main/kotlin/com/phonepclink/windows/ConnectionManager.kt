@@ -25,13 +25,40 @@ class ConnectionManager {
     var onConnectionChanged: ((Boolean) -> Unit)? = null
     var onChatMessageReceived: ((ChatMessage) -> Unit)? = null // Receive a new message
     var onDeleteMessage: ((Long) -> Unit)? = null              // Receive a delete by timestamp
+    // Fires with true when a reconnect cooldown starts (user should be told to wait),
+    // and with false when the cooldown ends and a new connection attempt is allowed.
+    var onCooldownChanged: ((Boolean) -> Unit)? = null
 
     private var isConnected = false
+
+    // Guards against onError + onClose + connectBlocking-false all independently
+    // firing onConnectionChanged(false) for a single failed attempt.
+    // Reset to false at the start of every new connect() call.
+    private val disconnectFired = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    // Prevents a second connect() call (e.g. duplicate QR scan, parallel Auto-Discover
+    // results, or Auto-Discover firing while a QR connection is already live) from
+    // killing an in-progress or established connection.
+    private val isConnecting = java.util.concurrent.atomic.AtomicBoolean(false)
 
     // ── Connection ───────────────────────────────────────────────────────────────
 
     fun connect(ip: String) {
+        // ── Duplicate-connect guard ────────────────────────────────────────────
+        // Prevents a second connect() call (duplicate QR scan, two parallel
+        // Auto-Discover results, or Auto-Discover firing while a QR connection
+        // is already live) from killing an in-progress or established connection.
+        if (isConnected) return
+        if (!isConnecting.compareAndSet(false, true)) {
+            // Blocked — cooldown is still active. Notify UI so it can show a toast.
+            onCooldownChanged?.invoke(true)
+            return
+        }
+
         phoneIP = ip
+        disconnectFired.set(false)          // reset for this new connection attempt
+        try { webSocketClient?.close() } catch (_: Exception) {}  // close any lingering client
+        webSocketClient = null
         // Rebuild the HTTP client every time we connect so it always uses the
         // most recently saved certificate (in case the user just paired).
         httpClient = buildHttpClient()
@@ -39,13 +66,27 @@ class ConnectionManager {
     }
 
     fun disconnect() {
+        // Set the guard BEFORE closing so that the onClose callback that fires
+        // asynchronously does NOT trigger a second onConnectionChanged(false).
+        disconnectFired.set(true)
         try {
             webSocketClient?.close()
         } catch (e: Exception) {
             e.printStackTrace()
         }
         isConnected = false
+//        isConnecting.set(false)
         onConnectionChanged?.invoke(false)
+
+        // ── Reconnect cooldown ────────────────────────────────────────────────────
+
+        // Holding isConnecting=true for 1.5 s gives Android enough time to fully
+        // process the FIN and unregister the old channel before the new SYN arrives.
+        Thread {
+            Thread.sleep(1_500)
+            isConnecting.set(false)
+            onCooldownChanged?.invoke(false)
+        }.apply { isDaemon = true; name = "reconnect-cooldown"; start() }
     }
 
     private fun connectWebSocket() {
@@ -70,6 +111,13 @@ class ConnectionManager {
                 }
 
                 override fun onOpen(handshakedata: ServerHandshake?) {
+                    // Connection established — release the connecting lock so a
+                    // manual reconnect attempt is possible after a future disconnect.
+                    isConnecting.set(false)
+                    // Successful connection — reset the guard so a future real
+                    // disconnect (e.g. phone goes offline) fires onConnectionChanged(false).
+                    disconnectFired.set(false)
+
                     // ── Verify TLS is actually active ────────────────────────────────────
                     val sslSocket = webSocketClient?.socket as? javax.net.ssl.SSLSocket
                     val tlsSession = sslSocket?.session
@@ -134,14 +182,26 @@ class ConnectionManager {
 
                 override fun onClose(code: Int, reason: String?, remote: Boolean) {
                     println("WebSocket closed: $reason")
+                    // If a new connect() has already started (replacing webSocketClient),
+                    // this is a stale callback from the old client.  Do nothing — the
+                    // new connection attempt manages its own state.
+                    if (this !== webSocketClient) return
                     isConnected = false
-                    onConnectionChanged?.invoke(false)
+                    isConnecting.set(false)
+                    if (disconnectFired.compareAndSet(false, true)) {
+                        onConnectionChanged?.invoke(false)
+                    }
                 }
 
                 override fun onError(ex: Exception?) {
                     println("WebSocket error: ${ex?.message}")
+                    // Same stale-callback guard as onClose.
+                    if (this !== webSocketClient) return
                     isConnected = false
-                    onConnectionChanged?.invoke(false)
+                    isConnecting.set(false)
+                    if (disconnectFired.compareAndSet(false, true)) {
+                        onConnectionChanged?.invoke(false)
+                    }
                 }
             }
             webSocketClient?.setSocketFactory(wrappedFactory)
@@ -152,20 +212,36 @@ class ConnectionManager {
             // the caller; any failure goes through the normal onError / catch paths.
             Thread {
                 try {
-                    val connected = webSocketClient?.connectBlocking(10, java.util.concurrent.TimeUnit.SECONDS) ?: false
+                    val connected = webSocketClient?.connectBlocking(10, TimeUnit.SECONDS) ?: false
                     if (!connected) {
-                        println("WebSocket: connectBlocking timed out or returned false — check port 8081")
-                        onConnectionChanged?.invoke(false)
+                        try { webSocketClient?.close() } catch (_: Exception) {}
+                        println("WebSocket: connectBlocking timed out — check port 8081")
+                        onCooldownChanged?.invoke(true)
+                        Thread.sleep(2_000)   // give Android time to process the FIN
+                        isConnecting.set(false)
+                        onCooldownChanged?.invoke(false)
+                        if (disconnectFired.compareAndSet(false, true)) {
+                            onConnectionChanged?.invoke(false)
+                        }
                     }
                 } catch (e: Exception) {
                     println("WebSocket: connectBlocking threw — ${e.javaClass.simpleName}: ${e.message}")
                     e.printStackTrace()
-                    onConnectionChanged?.invoke(false)
+                    try { webSocketClient?.close() } catch (_: Exception) {}
+                    onCooldownChanged?.invoke(true)
+                    Thread.sleep(2_000)
+                    isConnecting.set(false)
+                    onCooldownChanged?.invoke(false)
+                    if (disconnectFired.compareAndSet(false, true)) {
+                        onConnectionChanged?.invoke(false)
+                    }
                 }
             }.start()
         } catch (e: Exception) {
             e.printStackTrace()
-            onConnectionChanged?.invoke(false)
+            if (disconnectFired.compareAndSet(false, true)) {
+                onConnectionChanged?.invoke(false)
+            }
         }
     }
 //            webSocketClient?.connect()

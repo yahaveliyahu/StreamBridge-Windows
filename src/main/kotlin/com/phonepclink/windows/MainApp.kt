@@ -163,6 +163,24 @@ class MainApp : Application() {
     // ── Callbacks ────────────────────────────────────────────────────────────────
 
     private fun setupConnectionCallbacks() {
+        connectionManager.onCooldownChanged = { active ->
+            javafx.application.Platform.runLater {
+                // Disable all connect buttons during the post-disconnect / post-timeout
+                // cooldown so the user can't fire a new attempt into a still-busy selector.
+                showQRButton.isDisable = active
+                autoDiscoverButton.isDisable = active
+                connectButton.isDisable = active
+                if (active) {
+                    statusLabel.text = "Please wait a moment before reconnecting..."
+                    statusLabel.style = "-fx-text-fill: orange; -fx-font-weight: bold;"
+                } else if (!connectionManager.isConnected()) {
+                    // Cooldown ended and still not connected — restore normal disconnected UI.
+                    statusLabel.text = "Status: Disconnected"
+                    statusLabel.style = "-fx-text-fill: red; -fx-font-weight: bold;"
+                }
+            }
+        }
+
         connectionManager.onConnectionChanged = { connected ->
             javafx.application.Platform.runLater {
                 if (connected) {
