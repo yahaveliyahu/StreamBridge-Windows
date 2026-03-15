@@ -21,35 +21,29 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.nio.file.Paths
-
 import java.awt.Desktop
 import java.io.File
 import java.util.*
-
 import javafx.scene.input.Clipboard
 import javafx.scene.input.ClipboardContent
 import javafx.scene.control.ContextMenu
 import javafx.scene.control.MenuItem
 import javafx.scene.input.MouseButton
-
 import javafx.animation.FadeTransition
 import javafx.scene.control.Label
 import javafx.stage.Popup
 import javafx.stage.Window
 import javafx.util.Duration
-
 import com.drew.imaging.ImageMetadataReader
-
 import com.drew.metadata.exif.ExifDirectoryBase
 import javafx.scene.layout.StackPane
-
 import javafx.scene.Group
 
 class FileExplorer(private val connectionManager: ConnectionManager) {
 
     private val chatListView = ListView<ChatMessage>()
     private val messageInput = TextField()
-    private val sendButton = Button("➤")
+    private val sendButton = Button()
     private val attachButton = Button("+")
 
     // Managers
@@ -130,6 +124,13 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 -fx-cursor: hand;
             """.trimIndent()
 
+            // Submit button design — use the SVG send icon
+            sendButton.graphic = AppIcons.send(size = 20.0, color = Color.web("#000000"))
+            sendButton.style = """
+                -fx-background-color: transparent;
+                -fx-cursor: hand;
+            """.trimIndent()
+
             children.addAll(attachButton, messageInput.apply { HBox.setHgrow(this, Priority.ALWAYS) }, sendButton)
         }
         root.bottom = bottomBar
@@ -175,9 +176,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                         vbox.children.add(alignBox)
                         graphic = vbox
                         style = "-fx-background-color: transparent; -fx-padding: 5 10 5 10;"
-//                        graphic = createBubble(item)
-//                        style = "-fx-background-color: transparent; -fx-padding: 5 10 5 10;"
-//                        alignment = if (item.isIncoming) Pos.CENTER_LEFT else Pos.CENTER_RIGHT
                     }
                 }
             }
@@ -233,14 +231,14 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 // Create image preview
                 createImageThumbnail(msg.filePath)
             } else {
-                // Show emoji icon for non-images
-                Label(getEmojiForType(msg.type)).apply {
-                    style = "-fx-font-size: 24px;"
-                }
+                // Show SVG icon matching the Android ic_* drawables
+                getIconForType(msg.type, size = 28.0, isMe = isMe, fileName = msg.fileName)
             }
-
-//            val icon = Label(getEmojiForType(msg.type)).apply {
-//                style = "-fx-font-size: 24px;"
+//            } else {
+//                // Show emoji icon for non-images
+//                Label(getEmojiForType(msg.type)).apply {
+//                    style = "-fx-font-size: 24px;"
+//                }
 //            }
 
             val infoBox = VBox(2.0).apply {
@@ -257,94 +255,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 
             fileBox.children.addAll(thumbnail, infoBox)
             bubble.children.add(fileBox)
-
-            // Open and save buttons
-//            val btnBox = HBox(10.0).apply {
-//                alignment = Pos.CENTER
-//                padding = Insets(5.0, 0.0, 0.0, 0.0)
-//            }
-
-//            val openBtn = Button("Open").apply {
-//                style = "-fx-font-size: 10px; -fx-background-radius: 5; -fx-cursor: hand;"
-//                setOnAction {
-//                    val path = msg.filePath ?: return@setOnAction
-//                    try {
-//                        Desktop.getDesktop().open(File(path))
-//                    } catch (e: Exception) {
-//                        e.printStackTrace()
-//                    }
-//                }
-//            }
-
-//            val saveBtn = Button("Save As").apply {
-//                style = "-fx-font-size: 10px; -fx-background-radius: 5; -fx-cursor: hand;"
-//
-//                setOnAction {
-//                    val originalName = msg.fileName ?: "file_${System.currentTimeMillis()}"
-//                    val chooser = FileChooser().apply { initialFileName = msg.fileName }
-//                    val dest = chooser.showSaveDialog(chatListView.scene.window) ?: return@setOnAction
-//
-//                    try {
-//                        var finalDest = dest
-//
-//                        // If the user deletes an extension – it is automatically restored.
-//                        if (!finalDest.name.contains(".") && originalName.contains(".")) {
-//                            val ext = originalName.substringAfterLast(".")
-//
-////                        if (!finalDest.name.contains(".") && msg.fileName.contains(".")) {
-////                            val ext = msg.fileName.substringAfterLast(".")
-//                            finalDest = File(finalDest.parentFile, "${finalDest.name}.$ext")
-//                        }
-//                        val local = msg.filePath?.let { File(it) }
-//
-//                        // If there is a local file and it exists – normal copy
-//                        if (local != null && local.exists()) {
-//                            local.copyTo(finalDest, overwrite = true)
-//                            println("Saved locally: ${finalDest.absolutePath}")
-//                            return@setOnAction
-//                        }
-//
-//                        // Otherwise – re-download from the phone and save to the destination
-//                        val remote = msg.remotePath
-//                        if (remote.isNullOrBlank()) {
-//                            println("No local file and no remotePath to download")
-//                            return@setOnAction
-//                        }
-//
-//                        // Download in the background to avoid UI crashes
-//                        scope.launch {
-//                            try {
-//                                val bytes = connectionManager.downloadFile(remote)
-//                                if (bytes != null) {
-//                                    finalDest.writeBytes(bytes)
-//                                    println("Saved by re-download: ${finalDest.absolutePath}")
-//                                } else {
-//                                    println("Failed to re-download for saving. remotePath=$remote")
-//                                }
-//                            } catch (e: Exception) {
-//                                e.printStackTrace()
-//                            }
-//                        }
-//
-//                    } catch (e: Exception) {
-//                        e.printStackTrace()
-//                    }
-//                }
-//            }
-
-//            if (msg.filePath != null) {
-//                        val chooser = FileChooser()
-//                        chooser.initialFileName = msg.fileName
-//                        val dest = chooser.showSaveDialog(chatListView.scene.window)
-//                        if (dest != null) {
-//                            File(msg.filePath).copyTo(dest, overwrite = true)
-//                        }
-//                    }
-//                }
-//            }
-//            btnBox.children.addAll(openBtn, saveBtn)
-//            btnBox.children.add(saveBtn)
-//            bubble.children.add(btnBox)
 
         // Right-click context menu for file messages
         bubble.setOnContextMenuRequested { event ->
@@ -370,15 +280,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                     }
 
                     // VCF contacts: show a parsed dialog instead of opening "People" (which crashes)
-//                        try {
-//                            // הנתיב הסטנדרטי ב-Windows ל-WAB
-//                            val wabPath = "C:\\Program Files\\Common Files\\System\\wab.exe"
-//                            ProcessBuilder(wabPath, file.absolutePath).start()
-//                            println("Opened VCF with wab.exe")
-//                        } catch (e: Exception) {
-//                            println("wab.exe not found or failed, falling back to internal dialog")
-//                        showVcfDialog(file)
-//                        }
                     // Try all known wab.exe locations before falling back to built-in dialog
                     if (file.extension.lowercase() == "vcf") {
                         showVcfDialog(file)
@@ -488,29 +389,38 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         return 0.0
     }
 
-//        val container = VBox(2.0).apply {
-//            children.addAll(bubble, timeLbl)
-//            alignment = if (isMe) Pos.CENTER_RIGHT else Pos.CENTER_LEFT
-//        }
-//        return container
-//
-
     private fun showAttachMenu() {
         val menu = ContextMenu()
 
-        val items = listOf(
-            "🖼️ תמונה" to "*.png,*.jpg,*.jpeg,*.gif",
-            "🎬 וידאו" to "*.mp4,*.avi,*.mkv,*.mov",
-            "🎵 שמע" to "*.mp3,*.wav,*.aac",
-            "📁 קובץ" to "*.*"
+        data class AttachOption(val label: String, val ext: String, val type: MessageType, val icon: javafx.scene.Node)
+
+        val options = listOf(
+            AttachOption("וידאו",  "*.mp4,*.avi,*.mkv,*.mov",  MessageType.VIDEO, AppIcons.video(16.0, Color.web("#555"))),
+            AttachOption("תמונה",  "*.png,*.jpg,*.jpeg,*.gif", MessageType.IMAGE, AppIcons.image(16.0, Color.web("#555"))),
+            AttachOption("שמע",  "*.mp3,*.wav,*.aac",         MessageType.AUDIO, AppIcons.music(16.0, Color.web("#555"))),
+            AttachOption("קובץ",   "*.*",                        MessageType.FILE,  AppIcons.file(16.0,  Color.web("#555")))
         )
 
-        items.forEach { (label, ext) ->
-            val menuItem = MenuItem(label)
+        options.forEach { opt ->
+            val menuItem = MenuItem(opt.label, opt.icon)
             menuItem.style = "-fx-font-size: 14px; -fx-padding: 5 10 5 10;"
-            menuItem.setOnAction { chooseAndSendFile(ext, getTypeFromExt(label)) }
+            menuItem.setOnAction { chooseAndSendFile(opt.ext, opt.type) }
             menu.items.add(menuItem)
         }
+
+//        val items = listOf(
+//            "🖼️ תמונה" to "*.png,*.jpg,*.jpeg,*.gif",
+//            "🎬 וידאו" to "*.mp4,*.avi,*.mkv,*.mov",
+//            "🎵 שמע" to "*.mp3,*.wav,*.aac",
+//            "📁 קובץ" to "*.*"
+//        )
+
+//        items.forEach { (label, ext) ->
+//            val menuItem = MenuItem(label)
+//            menuItem.style = "-fx-font-size: 14px; -fx-padding: 5 10 5 10;"
+//            menuItem.setOnAction { chooseAndSendFile(ext, getTypeFromExt(label)) }
+//            menu.items.add(menuItem)
+//        }
 
         menu.show(attachButton, Side.TOP, 0.0, 0.0)
     }
@@ -600,23 +510,39 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         }
     }
 
-//    private fun downloadFile(msg: ChatMessage) {
-//        val fileChooser = FileChooser().apply { initialFileName = msg.fileName }
-//        val saveFile = fileChooser.showSaveDialog(chatListView.scene.window) ?: return
-//
-//        scope.launch {
-//            val data = connectionManager.downloadFile(msg.filePath!!) // הנחה שהנתיב נשמר
-//            if (data != null) {
-//                FileOutputStream(saveFile).use { it.write(data) }
-//            }
-//        }
-//    }
-
     private fun getEmojiForType(type: MessageType) = when (type) {
         MessageType.IMAGE -> "🖼️"
         MessageType.VIDEO -> "🎬"
         MessageType.AUDIO -> "🎵"
         else -> "📄"
+    }
+
+    /**
+     * Returns a properly-sized SVG icon node matching the Android ic_* drawables.
+     * Used in file/media message bubbles instead of emoji.
+     */
+    private fun getIconForType(
+        type: MessageType,
+        size: Double = 28.0,
+        isMe: Boolean = false,
+        fileName: String? = null
+    ): javafx.scene.Node {
+        val color = if (isMe)
+            Color.WHITE
+        else
+            Color.web("#555555")
+        val ext = fileName?.substringAfterLast('.', "")?.lowercase() ?: ""
+        return when (type) {
+            MessageType.IMAGE   -> AppIcons.image(size, color)
+            MessageType.VIDEO   -> AppIcons.video(size, color)
+            MessageType.AUDIO   -> AppIcons.music(size, color)
+            MessageType.FILE    -> when (ext) {
+                "vcf"       -> AppIcons.contacts(size, color)
+                "txt", "md" -> AppIcons.notes(size, color)
+                else        -> AppIcons.file(size, color)
+            }
+            else                -> AppIcons.file(size, color)
+        }
     }
 
     // Show context menu for file messages
@@ -692,13 +618,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 }
             }
         }
-
-        // Share option (copies text to clipboard for sharing)
-//        val shareItem = MenuItem("Share").apply {
-//            setOnAction {
-//                shareText(msg)
-//            }
-//        }
 
         contextMenu.items.addAll(deleteItem, copyItem)
         contextMenu.show(bubble, screenX, screenY)
@@ -817,36 +736,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 println("Could not share: File does not exist at ${file.absolutePath}")
             }
         }
-
-
-//    // ✅ SIMPLER: Share text using Win+H
-//    private fun shareText(msg: ChatMessage) {
-//        try {
-//            val text = msg.text ?: return
-//
-//            // Copy text to clipboard
-//            val clipboard = Toolkit.getDefaultToolkit().systemClipboard
-//            val selection = StringSelection(text)
-//            clipboard.setContents(selection, selection)
-//
-//            // Wait for clipboard
-//            Thread.sleep(100)
-//
-//            // Press Win+H to open Share UI
-//            val robot = Robot()
-//            robot.keyPress(KeyEvent.VK_WINDOWS)
-//            robot.keyPress(KeyEvent.VK_H)
-//            Thread.sleep(50)
-//            robot.keyRelease(KeyEvent.VK_H)
-//            robot.keyRelease(KeyEvent.VK_WINDOWS)
-//
-//            println("✅ Opened Windows Share UI with text")
-//
-//        } catch (e: Exception) {
-//            println("❌ Error: ${e.message}")
-//            e.printStackTrace()
-//        }
-//    }
 
     private fun showToast(ownerWindow: Window, message: String) {
         val popup = Popup()
@@ -973,79 +862,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             }
         }
 
-
-//                if (contact.fullName.isNotBlank()) {
-//                    card.children.add(Label(contact.fullName).apply {
-//                        style = "-fx-font-size: 16px; -fx-font-weight: bold;"
-//                    })
-//                }
-//                if (contact.organization.isNotBlank()) {
-//                    card.children.add(Label("\uD83C\uDFE2  ${contact.organization}").apply {
-//                        style = "-fx-font-size: 12px; -fx-text-fill: #555;"
-//                    })
-//                }
-//                contact.phones.forEach { (label, number) ->
-//                    val lbl = if (label.isNotBlank()) "\uD83D\uDCDE  $label: $number" else "\uD83D\uDCDE  $number"
-//                    val phoneLbl = Label(lbl).apply {
-//                        style = "-fx-font-size: 13px; -fx-cursor: hand;"
-//                        tooltip = Tooltip("Click to copy")
-//                    }
-//                    phoneLbl.setOnMouseClicked {
-//                        val cb = Clipboard.getSystemClipboard()
-//                        val cc = ClipboardContent(); cc.putString(number); cb.setContent(cc)
-//                        showToast(dialog.dialogPane.scene.window, "Copied: $number")
-//                    }
-//                    card.children.add(phoneLbl)
-//                }
-//                contact.emails.forEach { (label, email) ->
-//                    val lbl = if (label.isNotBlank()) "\u2709\uFE0F  $label: $email" else "\u2709\uFE0F  $email"
-//                    val emailLbl = Label(lbl).apply {
-//                        style = "-fx-font-size: 13px; -fx-cursor: hand;"
-//                        tooltip = Tooltip("Click to copy")
-//                    }
-//                    emailLbl.setOnMouseClicked {
-//                        val cb = Clipboard.getSystemClipboard()
-//                        val cc = ClipboardContent(); cc.putString(email); cb.setContent(cc)
-//                        showToast(dialog.dialogPane.scene.window, "Copied: $email")
-//                    }
-//                    card.children.add(emailLbl)
-//                }
-//                contact.addresses.forEach { addr ->
-//                    if (addr.isNotBlank()) {
-//                        card.children.add(Label("\uD83D\uDCCD  $addr").apply {
-//                            style = "-fx-font-size: 13px; -fx-wrap-text: true; -fx-max-width: 380;"
-//                        })
-//                    }
-//                }
-//                if (contact.note.isNotBlank()) {
-//                    card.children.add(Label("\uD83D\uDCDD  ${contact.note}").apply {
-//                        style = "-fx-font-size: 12px; -fx-text-fill: #666; -fx-wrap-text: true; -fx-max-width: 380;"
-//                    })
-//                }
-//                content.children.add(card)
-//            }
-//        }
-
-        // ── Button row ──
-        // ── Helper: build a nicely-formatted plain-text summary of all contacts ──
-//        fun buildContactText(): String {
-//            val sb = StringBuilder()
-//            for ((idx, c) in contacts.withIndex()) {
-//                if (idx > 0) sb.appendLine()
-//                if (c.fullName.isNotBlank())     sb.appendLine("Name:    ${c.fullName}")
-//                if (c.organization.isNotBlank()) sb.appendLine("Company: ${c.organization}")
-//                c.phones.forEach { (lbl, num) ->
-//                    sb.appendLine(if (lbl.isNotBlank()) "Phone ($lbl): $num" else "Phone: $num")
-//                }
-//                c.emails.forEach { (lbl, email) ->
-//                    sb.appendLine(if (lbl.isNotBlank()) "Email ($lbl): $email" else "Email: $email")
-//                }
-//                c.addresses.forEach { addr -> sb.appendLine("Address: $addr") }
-//                if (c.note.isNotBlank())         sb.appendLine("Note:    ${c.note}")
-//            }
-//            return sb.toString().trimEnd()
-//        }
-
         val buttonRow = HBox(10.0).apply { alignment = Pos.CENTER_LEFT; padding = Insets(4.0, 0.0, 0.0, 0.0) }
 
         // ── Helper: build a clean UTF-8 vCard 3.0 string from parsed contact data ──
@@ -1097,16 +913,16 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                         ?.replace(Regex("[\\\\/:*?\"<>|]"), "_")
                         ?: "Contact"
 
-                    // 2. בניית השם המבוקש: שם איש הקשר + חותמת האפליקציה
+                    // Building the requested name: contact name + app stamp
                     val customFileName = "${contactName}_StreamBridge.vcf"
 
-                    // 3. יצירת הנתיב בתיקיית הזמניים של המערכת
+                    // Creating the path in the system temporary folder
                     val tempDir = System.getProperty("java.io.tmpdir")
                     val tempFile = File(tempDir, customFileName)
 
                     // Write to a temp file – deleted when the app closes, never opened by People app
                     tempFile.writeText(buildVCard(), Charsets.UTF_8)
-                    tempFile.deleteOnExit() // מחיקה בסגירת האפליקציה
+                    tempFile.deleteOnExit() // Delete when closing the app
 
                     // Put the file on the clipboard so the user can Ctrl+V in WhatsApp Desktop
                     val cb = Clipboard.getSystemClipboard()
@@ -1208,14 +1024,11 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                         <table>
                 """)
 
-                        // שימוש בתוויות באנגלית וסינון שדות ריקים
+                        // Filtering empty fields
                         if (contact.organization.isNotBlank()) {
                             append("<tr><td class='lbl'>Company:</td><td class='val'>${contact.organization.rev()}</td></tr>")
                             append("<tr><td colspan='2'><hr/></td></tr>")
                         }
-//                            append("<div class='field'><span class='label'>Company:</span> ${contact.organization}</div>")
-//                        }
-//                        append("<hr/>")
 
                         contact.phones.forEach { (label, num) ->
                             if (num.isNotBlank()) {
@@ -1249,11 +1062,11 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 """)
                     }.toString()
 
-                    // יצירת ה-PDF
+                    // Creating the PDF
                     java.io.FileOutputStream(dest).use { os ->
                         val builder = com.openhtmltopdf.pdfboxout.PdfRendererBuilder()
 
-                        // טעינת פונט Arial תקין שתומך בעברית כדי למנוע סימני #
+                        // Loading a proper Arial font that supports Hebrew to avoid # signs
                         val fontFile = File("C:/Windows/Fonts/arial.ttf")
                         if (fontFile.exists()) {
                             builder.useFont(fontFile, "Arial")
@@ -1327,8 +1140,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                             contact.phones.add(origLabel to num)
                         }
                     }
-//                        if (n.text.isNotBlank()) contact.phones.add(l.text.trim() to n.text.trim())
-//                    }
                     contact.emails.clear()
                     emailFields.forEachIndexed { i, tf ->
                         val email = tf.text.trim()
@@ -1337,8 +1148,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                             contact.emails.add(origLabel to email)
                         }
                     }
-//                        if (e.text.isNotBlank()) contact.emails.add(l.text.trim() to e.text.trim())
-//                    }
                     contact.addresses.clear()
                     if (addrField.text.isNotBlank()) contact.addresses.add(addrField.text.trim())
 
@@ -1381,45 +1190,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         dialog.dialogPane.buttonTypes.add(ButtonType.CLOSE)
         dialog.showAndWait()
     }
-
-
-//        // "Export VCF" – saves file AND opens containing folder so user can import into Outlook etc.
-//        // (does NOT open the .vcf directly, which would launch the broken People app)
-//        val saveBtn = Button("\uD83D\uDCBE Export VCF for Import...").apply {
-//            style = "-fx-cursor: hand;"
-//            setOnAction {
-//                val chooser = FileChooser().apply {
-//                    title = "Save Contact VCF"
-//                    initialFileName = vcfFile.name
-//                    extensionFilters.add(FileChooser.ExtensionFilter("vCard (*.vcf)", "*.vcf"))
-//                }
-//                val dest = chooser.showSaveDialog(dialog.dialogPane.scene.window)
-//                if (dest != null) {
-//                    vcfFile.copyTo(dest, overwrite = true)
-//                    // Open the folder, NOT the file – avoids opening the broken People app
-//                    try { Desktop.getDesktop().browseFileDirectory(dest) } catch (_: Exception) {
-//                        try { Desktop.getDesktop().open(dest.parentFile) } catch (_: Exception) {}
-//                    }
-//                    showToast(dialog.dialogPane.scene.window,
-//                        "Saved! Import via Outlook or Windows Contacts.")
-//                }
-//            }
-//        }
-//
-//        buttonRow.children.addAll(copyBtn, saveBtn)
-//        content.children.add(buttonRow)
-//
-//        val scroll = ScrollPane(content).apply {
-//            isFitToWidth = true
-//            prefViewportHeight = 420.0
-//            style = "-fx-background-color: white;"
-//        }
-//
-//        dialog.dialogPane.content = scroll
-//        dialog.dialogPane.prefWidth = 460.0
-//        dialog.dialogPane.buttonTypes.add(ButtonType.CLOSE)
-//        dialog.showAndWait()
-//    }
 
     private fun parseVcf(file: File): List<VcfContact> {
         val contacts = mutableListOf<VcfContact>()
@@ -1538,41 +1308,12 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                     // Detect charset (default UTF-8 for Samsung)
                     val csMatch = Regex("CHARSET=([A-Za-z0-9_-]+)").find(keyUpper)
                     if (csMatch != null) currentCharset = csMatch.groupValues[1]
-
-                    // QP soft line break check: if value ends with '=', more lines follow
-                    // (handled at top of next iteration)
                 }
             }
         }
         if (currentKey.isNotBlank()) commitLine(currentKey, currentValue.toString())
         return contacts
     }
-
-
-
-//        file.readLines(Charsets.UTF_8).forEach { rawLine ->
-//            if ((rawLine.startsWith(" ") || rawLine.startsWith("\t")) && current != null) {
-//                currentValue.append(rawLine.trimStart())
-//                return@forEach
-//            }
-//            if (currentKey.isNotBlank()) commitLine(currentKey, currentValue.toString())
-//            currentKey = ""; currentValue = StringBuilder()
-//            val line = rawLine.trim()
-//            when {
-//                line.equals("BEGIN:VCARD", ignoreCase = true) -> current = VcfContact()
-//                line.equals("END:VCARD",   ignoreCase = true) -> {
-//                    current?.let { contacts.add(it) }; current = null
-//                }
-//                line.contains(":") && current != null -> {
-//                    val idx = line.indexOf(':')
-//                    currentKey = line.substring(0, idx)
-//                    currentValue = StringBuilder(line.substring(idx + 1))
-//                }
-//            }
-//        }
-//        if (currentKey.isNotBlank()) commitLine(currentKey, currentValue.toString())
-//        return contacts
-//    }
 
     private data class VcfContact(
         var fullName: String = "",
@@ -1583,248 +1324,3 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         val addresses: MutableList<String> = mutableListOf()
     )
 }
-
-//    // Share file (open in file explorer)
-//    private fun shareFile(msg: ChatMessage) {
-//        try {
-//            val path = msg.filePath ?: return
-//            val file = File(path)
-//
-//            if (file.exists()) {
-//                // Open file location in explorer
-//                Desktop.getDesktop().browseFileDirectory(file)
-//                println("Opened file location: ${file.parent}")
-//            } else {
-//                println("File not found: $path")
-//            }
-//        } catch (e: Exception) {
-//            println("Error sharing file: ${e.message}")
-//            e.printStackTrace()
-//        }
-//    }
-//
-//    // ✅ NEW: Share text (show dialog with text to copy)
-//    private fun shareText(msg: ChatMessage) {
-//        val clipboard = Clipboard.getSystemClipboard()
-//        val content = ClipboardContent()
-//        content.putString(msg.text ?: "")
-//        clipboard.setContent(content)
-//
-//        val alert = javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.INFORMATION)
-//        alert.title = "Text Copied"
-//        alert.headerText = "Text copied to clipboard"
-//        alert.contentText = "You can now paste it anywhere to share"
-//        alert.showAndWait()
-//    }
-//}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//class FileExplorer(private val connectionManager: ConnectionManager) {
-//    private val tableView = TableView<FileItem>()
-//    private val statusLabel = Label("Not connected")
-//    private val refreshButton = Button("Refresh")
-//    private val downloadButton = Button("Download Selected")
-//    private val scope = CoroutineScope(Dispatchers.Default)
-//
-//    init {
-//        setupTable()
-//
-//        refreshButton.setOnAction {
-//            loadFiles()
-//        }
-//
-//        downloadButton.setOnAction {
-//            downloadSelected()
-//        }
-//
-//        downloadButton.isDisable = true
-//    }
-//
-//    fun getView(): BorderPane {
-//        val root = BorderPane()
-//
-//        // Top bar
-//        val topBar = HBox(10.0)
-//        topBar.padding = Insets(10.0)
-//        topBar.children.addAll(refreshButton, downloadButton, statusLabel)
-//        root.top = topBar
-//
-//        // Center - File table
-//        root.center = tableView
-//
-//        return root
-//    }
-//
-//    private fun setupTable() {
-//        val nameColumn = TableColumn<FileItem, String>("Name")
-//        nameColumn.cellValueFactory = PropertyValueFactory("name")
-//        nameColumn.prefWidth = 300.0
-//
-//        val sizeColumn = TableColumn<FileItem, String>("Size")
-//        sizeColumn.cellValueFactory = PropertyValueFactory("sizeStr")
-//        sizeColumn.prefWidth = 100.0
-//
-//        val typeColumn = TableColumn<FileItem, String>("Type")
-//        typeColumn.cellValueFactory = PropertyValueFactory("type")
-//        typeColumn.prefWidth = 150.0
-//
-//        val pathColumn = TableColumn<FileItem, String>("Path")
-//        pathColumn.cellValueFactory = PropertyValueFactory("path")
-//        pathColumn.prefWidth = 400.0
-//
-//        tableView.columns.addAll(nameColumn, sizeColumn, typeColumn, pathColumn)
-//
-//        tableView.selectionModel.selectedItemProperty().addListener { _, _, newValue ->
-//            downloadButton.isDisable = newValue == null
-//        }
-//    }
-//
-//    private fun loadFiles() {
-//        if (!connectionManager.isConnected()) {
-//            Platform.runLater {
-//                statusLabel.text = "Please connect to phone first"
-//            }
-//            return
-//        }
-//
-//        Platform.runLater {
-//            statusLabel.text = "Loading files..."
-//        }
-//
-//        scope.launch {
-//            try {
-//                val jsonStr = connectionManager.fetchFileList()
-//                if (jsonStr != null) {
-//                    val jsonArray = JSONArray(jsonStr)
-//                    val fileItems = mutableListOf<FileItem>()
-//
-//                    for (i in 0 until jsonArray.length()) {
-//                        val obj = jsonArray.getJSONObject(i)
-//                        val fileItem = FileItem(
-//                            name = obj.getString("name"),
-//                            path = obj.getString("path"),
-//                            size = obj.getLong("size"),
-//                            type = obj.getString("type")
-//                        )
-//                        fileItems.add(fileItem)
-//                    }
-//
-//                    Platform.runLater {
-//                        tableView.items.clear()
-//                        tableView.items.addAll(fileItems)
-//                        statusLabel.text = "Loaded ${fileItems.size} files"
-//                    }
-//                } else {
-//                    Platform.runLater {
-//                        statusLabel.text = "Failed to load files"
-//                    }
-//                }
-//            } catch (e: Exception) {
-//                println("Error loading files: ${e.message}")
-//                Platform.runLater {
-//                    statusLabel.text = "Error: ${e.message}"
-//                }
-//            }
-//        }
-//    }
-//
-//    private fun downloadSelected() {
-//        val selected = tableView.selectionModel.selectedItem ?: return
-//
-//        val fileChooser = FileChooser()
-//        fileChooser.title = "Save File"
-//        fileChooser.initialFileName = selected.name
-//
-//        val saveFile = fileChooser.showSaveDialog(tableView.scene.window) ?: return
-//
-//        Platform.runLater {
-//            statusLabel.text = "Downloading ${selected.name}..."
-//        }
-//
-//        scope.launch {
-//            try {
-//                val fileData = connectionManager.downloadFile(selected.path)
-//                if (fileData != null) {
-//                    FileOutputStream(saveFile).use { fos ->
-//                        fos.write(fileData)
-//                    }
-//
-//                    Platform.runLater {
-//                        statusLabel.text = "Downloaded: ${saveFile.absolutePath}"
-//                    }
-//                } else {
-//                    Platform.runLater {
-//                        statusLabel.text = "Failed to download file"
-//                    }
-//                }
-//            } catch (e: Exception) {
-//                println("Error downloading file: ${e.message}")
-//                Platform.runLater {
-//                    statusLabel.text = "Error: ${e.message}"
-//                }
-//            }
-//        }
-//    }
-//
-//    fun cleanup() {
-//        scope.cancel()
-//    }
-//}
-//
-

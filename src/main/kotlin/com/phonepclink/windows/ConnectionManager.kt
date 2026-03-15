@@ -69,14 +69,20 @@ class ConnectionManager {
         // Set the guard BEFORE closing so that the onClose callback that fires
         // asynchronously does NOT trigger a second onConnectionChanged(false).
         disconnectFired.set(true)
+        isConnected = false
+        onConnectionChanged?.invoke(false)
+
+        // Signal the cooldown immediately so the UI shows "please wait"
+        // right when the button is clicked, not only if the user tries to reconnect.
+        onCooldownChanged?.invoke(true)
         try {
             webSocketClient?.close()
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        isConnected = false
-//        isConnecting.set(false)
-        onConnectionChanged?.invoke(false)
+//        isConnected = false
+////        isConnecting.set(false)
+//        onConnectionChanged?.invoke(false)
 
         // ── Reconnect cooldown ────────────────────────────────────────────────────
 

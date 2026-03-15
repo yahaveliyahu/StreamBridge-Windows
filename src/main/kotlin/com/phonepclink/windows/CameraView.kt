@@ -14,7 +14,6 @@ import javafx.embed.swing.SwingFXUtils
 import kotlinx.coroutines.*
 import java.io.ByteArrayInputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import javax.imageio.ImageIO
@@ -105,7 +104,7 @@ class CameraView(private val connectionManager: ConnectionManager) {
 
         streamingJob = scope.launch {
             println("CameraView: Streaming job started")
-            var frameCount = 0
+//            var frameCount = 0
 
             while (isStreaming) {
                 try {

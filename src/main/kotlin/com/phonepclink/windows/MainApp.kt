@@ -25,6 +25,7 @@ class MainApp : Application() {
     private lateinit var cameraView: CameraView
     private lateinit var fileExplorer: FileExplorer
 
+
     override fun start(primaryStage: Stage) {
         primaryStage.title = "StreamBridge"
 
@@ -76,12 +77,32 @@ class MainApp : Application() {
 
         // Files tab
         fileExplorer = FileExplorer(connectionManager)
-        val filesTab = Tab("Chat", fileExplorer.getView())
+        val filesTab = Tab("Chat", fileExplorer.getView()).apply {
+        val iconBox = HBox(5.0).apply {
+            alignment = Pos.CENTER
+            children.addAll(
+                AppIcons.notes(14.0, javafx.scene.paint.Color.web("#444")),
+                Label("Chat")
+            )
+        }
+        graphic = iconBox
+        text = ""
+        }
         filesTab.isClosable = false
 
         // Camera tab
         cameraView = CameraView(connectionManager)
-        val cameraTab = Tab("Camera", cameraView.getView())
+        val cameraTab = Tab("Camera", cameraView.getView()).apply {
+            val iconBox = HBox(5.0).apply {
+                alignment = Pos.CENTER
+                children.addAll(
+                    AppIcons.camera(14.0, javafx.scene.paint.Color.web("#444")),
+                    Label("Camera")
+                )
+            }
+            graphic = iconBox
+            text = ""
+        }
         cameraTab.isClosable = false
 
         tabPane.tabs.addAll(filesTab, cameraTab)
@@ -125,12 +146,16 @@ class MainApp : Application() {
 
         val easyLabel = Label("Easy Connect:")
 
-        showQRButton = Button("📱 Show QR Code")
+        showQRButton = Button("Show QR Code").apply {
+            graphic = AppIcons.contacts(14.0, javafx.scene.paint.Color.web("#222"))
+        }
         showQRButton.setOnAction {
             showQRCode()
         }
 
-        autoDiscoverButton = Button("🔍 Auto-Discover Devices")
+        autoDiscoverButton = Button("Auto-Discover Devices").apply {
+            graphic = AppIcons.folder(14.0, javafx.scene.paint.Color.web("#222"))
+        }
         autoDiscoverButton.setOnAction {
             startAutoDiscovery()
         }
@@ -217,7 +242,7 @@ class MainApp : Application() {
                 // popping up a second dialog while the first one is still open.
                 discoveryManager.stopDiscovery()
                 autoDiscoverButton.isDisable = false
-                autoDiscoverButton.text = "🔍 Auto-Discover Devices"
+                autoDiscoverButton.text = "Auto-Discover Devices"
 
 
                 val alert = Alert(Alert.AlertType.CONFIRMATION)
@@ -285,7 +310,7 @@ class MainApp : Application() {
             javafx.application.Platform.runLater {
                 discoveryManager.stopDiscovery()
                 autoDiscoverButton.isDisable = false
-                autoDiscoverButton.text = "🔍 Auto-Discover Devices"
+                autoDiscoverButton.text = "Auto-Discover Devices"
             }
         }
     }
@@ -306,6 +331,7 @@ class MainApp : Application() {
     }
 
     override fun stop() {
+        cameraView.cleanup()
         connectionManager.disconnect()
         discoveryManager.stopDiscovery()
         super.stop()
