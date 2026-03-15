@@ -37,32 +37,20 @@ class QRCodeGenerator {
         
         return SwingFXUtils.toFXImage(bufferedImage, null)
     }
-    
-//    fun getLocalIPAddress(): String {
-//        try {
-//            val socket = java.net.Socket()
-//            socket.connect(java.net.InetSocketAddress("8.8.8.8", 80))
-//            val ip = socket.localAddress.hostAddress
-//            socket.close()
-//            return ip ?: "127.0.0.1"
-//        } catch (e: Exception) {
-//            return "127.0.0.1"
-//        }
-//    }
 
     fun getLocalIPAddress(): String {
         try {
             val interfaces = NetworkInterface.getNetworkInterfaces()
             while (interfaces.hasMoreElements()) {
                 val iface = interfaces.nextElement()
-                // מסננים: לא Loopback (127.0.0.1) וחייב להיות פעיל (Up)
+                // Filters: No Loopback (127.0.0.1) and must be active (Up)
                 if (iface.isLoopback || !iface.isUp) continue
 
                 val addresses = iface.inetAddresses
                 while (addresses.hasMoreElements()) {
                     val addr = addresses.nextElement()
 
-                    // מחפשים כתובת IPv4 בלבד (לא IPv6)
+                    // Looking for IPv4 address only (not IPv6)
                     if (addr is Inet4Address && !addr.isLoopbackAddress) {
                         return addr.hostAddress
                     }
@@ -71,6 +59,6 @@ class QRCodeGenerator {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return "127.0.0.1" // רק אם ממש לא מצאנו כלום
+        return "127.0.0.1" // Only if we really didn't find anything
     }
 }

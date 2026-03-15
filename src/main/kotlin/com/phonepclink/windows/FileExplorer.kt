@@ -232,14 +232,8 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                 createImageThumbnail(msg.filePath)
             } else {
                 // Show SVG icon matching the Android ic_* drawables
-                getIconForType(msg.type, size = 28.0, isMe = isMe, fileName = msg.fileName)
+                getIconForType(msg.type, isMe = isMe, fileName = msg.fileName)
             }
-//            } else {
-//                // Show emoji icon for non-images
-//                Label(getEmojiForType(msg.type)).apply {
-//                    style = "-fx-font-size: 24px;"
-//                }
-//            }
 
             val infoBox = VBox(2.0).apply {
                 val nameLbl = Label(msg.fileName).apply {
@@ -265,7 +259,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 
         // Make bubble clickable on left-click
         bubble.setOnMouseClicked { event ->
-            // Only respond to left click (primary button)
+            // Only respond to left-click (primary button)
             if (event.button == MouseButton.PRIMARY && event.clickCount == 1) {
                 val path = msg.filePath ?: return@setOnMouseClicked
                 try {
@@ -280,7 +274,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                     }
 
                     // VCF contacts: show a parsed dialog instead of opening "People" (which crashes)
-                    // Try all known wab.exe locations before falling back to built-in dialog
                     if (file.extension.lowercase() == "vcf") {
                         showVcfDialog(file)
                     } else {
@@ -345,10 +338,10 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             }
 
             // Wrap in a Group.
-            // JavaFX layouts ignore rotated dimensions unless wrapped in a Group!
+            // JavaFX layouts ignore rotated dimensions unless wrapped in a Group
             val rotatedGroup = Group(imageView)
 
-            // Wrap the ImageView in a StackPane!
+            // Wrap the ImageView in a StackPane
             // This forces JavaFX to respect the rotated dimensions in the HBox layout.
             StackPane(rotatedGroup).apply {
                 style = "-fx-background-radius: 8; -fx-border-radius: 8; -fx-border-color: rgba(0,0,0,0.1); -fx-border-width: 1;"
@@ -408,30 +401,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             menu.items.add(menuItem)
         }
 
-//        val items = listOf(
-//            "🖼️ תמונה" to "*.png,*.jpg,*.jpeg,*.gif",
-//            "🎬 וידאו" to "*.mp4,*.avi,*.mkv,*.mov",
-//            "🎵 שמע" to "*.mp3,*.wav,*.aac",
-//            "📁 קובץ" to "*.*"
-//        )
-
-//        items.forEach { (label, ext) ->
-//            val menuItem = MenuItem(label)
-//            menuItem.style = "-fx-font-size: 14px; -fx-padding: 5 10 5 10;"
-//            menuItem.setOnAction { chooseAndSendFile(ext, getTypeFromExt(label)) }
-//            menu.items.add(menuItem)
-//        }
-
         menu.show(attachButton, Side.TOP, 0.0, 0.0)
-    }
-
-    private fun getTypeFromExt(label: String): MessageType {
-        return when {
-            label.contains("תמונה") -> MessageType.IMAGE
-            label.contains("וידאו") -> MessageType.VIDEO
-            label.contains("שמע") -> MessageType.AUDIO
-            else -> MessageType.FILE
-        }
     }
 
     private fun sendMessage() {
@@ -443,7 +413,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         addMessageToChat(msg)
         // Field cleaning
         messageInput.clear()
-        // Send to phone (future logic)
+        // Send to phone
         connectionManager.sendChatMessage(msg)
     }
 
@@ -451,7 +421,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         val chooser = FileChooser()
         // Opening folder by type
         chooser.initialDirectory = getDefaultDir(type)
-        // Filter by suffixes (fix splitting)
+        // Filter by suffixes
         if (extensions != "*.*") {
             // Converts the string "*.jpg;*.png" to a list
             val extList = extensions.split(",").map { it.trim() }
@@ -510,38 +480,31 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
         }
     }
 
-    private fun getEmojiForType(type: MessageType) = when (type) {
-        MessageType.IMAGE -> "🖼️"
-        MessageType.VIDEO -> "🎬"
-        MessageType.AUDIO -> "🎵"
-        else -> "📄"
-    }
-
     /**
      * Returns a properly-sized SVG icon node matching the Android ic_* drawables.
      * Used in file/media message bubbles instead of emoji.
      */
     private fun getIconForType(
         type: MessageType,
-        size: Double = 28.0,
         isMe: Boolean = false,
         fileName: String? = null
     ): javafx.scene.Node {
+        val size = 28.0
         val color = if (isMe)
             Color.WHITE
         else
             Color.web("#555555")
         val ext = fileName?.substringAfterLast('.', "")?.lowercase() ?: ""
         return when (type) {
-            MessageType.IMAGE   -> AppIcons.image(size, color)
-            MessageType.VIDEO   -> AppIcons.video(size, color)
-            MessageType.AUDIO   -> AppIcons.music(size, color)
-            MessageType.FILE    -> when (ext) {
-                "vcf"       -> AppIcons.contacts(size, color)
+            MessageType.IMAGE -> AppIcons.image(size, color)
+            MessageType.VIDEO -> AppIcons.video(size, color)
+            MessageType.AUDIO -> AppIcons.music(size, color)
+            MessageType.FILE -> when (ext) {
+                "vcf" -> AppIcons.contacts(size, color)
                 "txt", "md" -> AppIcons.notes(size, color)
-                else        -> AppIcons.file(size, color)
+                else -> AppIcons.file(size, color)
             }
-            else                -> AppIcons.file(size, color)
+            else -> AppIcons.file(size, color)
         }
     }
 
@@ -718,9 +681,10 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
 
     private fun copyFile(msg: ChatMessage) {
             // Extract the file path from your message object
-            val file = File(msg.filePath)
+        val file = File(msg.filePath ?: return)
 
-            if (file.exists()) {
+
+        if (file.exists()) {
                 val clipboard = Clipboard.getSystemClipboard()
                 val content = ClipboardContent()
 
@@ -903,7 +867,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             return sb.toString().trimEnd()
         }
 
-        // ── Button 1: Export as vCard – share on WhatsApp or any contacts app ──
+        // ──────────── Button 1: Export as vCard – share on WhatsApp or any contacts app ──
         val copyBtn = Button("\uD83D\uDCF2 Export as vCard").apply {
             style = "-fx-cursor: hand;"
             tooltip = Tooltip("Saves a clean vCard file and puts it on the clipboard.\nDrag it into WhatsApp (or any app) to share.")
@@ -924,7 +888,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
                     tempFile.writeText(buildVCard(), Charsets.UTF_8)
                     tempFile.deleteOnExit() // Delete when closing the app
 
-                    // Put the file on the clipboard so the user can Ctrl+V in WhatsApp Desktop
+                    // Put the file on the clipboard so the user can Ctrl+V in WhatsApp or any contacts app
                     val cb = Clipboard.getSystemClipboard()
                     val cc = ClipboardContent()
                     cc.putFiles(listOf(tempFile))
@@ -941,9 +905,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             }
         }
 
-        // ── Button 2: Save as .txt and open with Notepad ──
-        // A plain-text file opens with Notepad by default on every Windows PC
-        // and stores the contact permanently with no app dependency.
+        // ────────────── Button 2: Save as PDF ────────────────────────────────────────
         val savePdfBtn = Button("\uD83D\uDCC4 Save as PDF").apply {
             style = "-fx-cursor: hand;"
             setOnAction {
@@ -1086,7 +1048,7 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             }
         }
 
-        // ── Edit Contact button ──
+        // ────────────── Button 3: Edit Contact button ────────────────────────────────────
         // Opens a form pre-filled with all contact fields.
         // On OK: writes changes back into the contact object and redraws the card instantly.
         val editBtn = Button("\u270F\uFE0F Edit Contact").apply {
@@ -1233,7 +1195,6 @@ class FileExplorer(private val connectionManager: ConnectionManager) {
             when {
                 baseKey == "FN"  -> c.fullName = value.trim()
                 baseKey == "N"    -> {
-                    // N:LastName;FirstName;Middle;Prefix;Suffix  — only fill fullName if FN is empty
                     if (c.fullName.isBlank()) {
                         val parts = value.split(";").map { it.trim() }.filter { it.isNotBlank() }
                         c.fullName = parts.joinToString(" ")

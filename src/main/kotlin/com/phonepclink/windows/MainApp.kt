@@ -147,14 +147,15 @@ class MainApp : Application() {
         val easyLabel = Label("Easy Connect:")
 
         showQRButton = Button("Show QR Code").apply {
-            graphic = AppIcons.contacts(14.0, javafx.scene.paint.Color.web("#222"))
+            graphic = AppIcons.qr(14.0, javafx.scene.paint.Color.web("#222"))
+            style = "-fx-content-display: left;"
         }
         showQRButton.setOnAction {
             showQRCode()
         }
 
         autoDiscoverButton = Button("Auto-Discover Devices").apply {
-            graphic = AppIcons.folder(14.0, javafx.scene.paint.Color.web("#222"))
+            graphic = Label("🔍").also { it.style = "-fx-font-size: 14px;" }
         }
         autoDiscoverButton.setOnAction {
             startAutoDiscovery()

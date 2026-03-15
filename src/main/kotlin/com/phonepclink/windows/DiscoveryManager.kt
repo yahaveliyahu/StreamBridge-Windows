@@ -195,7 +195,7 @@ class DiscoveryManager {
     // ── QR listener ──────────────────────────────────────────────────────────────
     // The phone sent a JSON object: {"ip":"...","cert":"<base64>","fingerprint":"..."}
 
-    // האזנה לקריאה מהטלפון אחרי סריקת QR
+    // Listen to the call from your phone after scanning QR
     fun startQrListener(onConnectRequest: (phoneIp: String, certBase64: String?) -> Unit) {
         thread {
             try {
@@ -211,14 +211,11 @@ class DiscoveryManager {
                         if (!message.isNullOrBlank()) {
                             println("QR Scan detected! Phone IP: $message")
                             if (message.trim().startsWith("{")) {
-                                // New JSON format: {"ip":"...","cert":"...","fingerprint":"..."}
                                 val json = JSONObject(message)
                                 val ip = json.getString("ip")
                                 val certBase64 = json.optString("cert", null)
                                 onConnectRequest(ip, certBase64)
                             } else {
-                                // Legacy: plain IP string (no cert — will use trust-all TLS)
-                                // Activates the connection in MainApp
                                 onConnectRequest(message.trim(), null)
                             }
                         }
@@ -235,6 +232,7 @@ class DiscoveryManager {
     }
 
     // ── Network interface selection ───────────────────────────────────────────────
+
     // Returns the IPv4 address of the real (WiFi / Ethernet) NIC, skipping virtual
     // adapters so JmDNS uses the interface that is actually on the phone's network
 

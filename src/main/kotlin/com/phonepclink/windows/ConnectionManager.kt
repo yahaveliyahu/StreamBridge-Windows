@@ -18,13 +18,12 @@ class ConnectionManager {
     private var phoneIP: String = ""
     private var webSocketClient: WebSocketClient? = null
 
-    // Rebuilt on each connect() call with the appropriate SSL trust policy.
+    // Rebuilt on each connect() call with the appropriate TLS trust policy.
     private var httpClient: OkHttpClient = buildHttpClient()
 
-    // Callbacks - functions that will be triggered when things happen
     var onConnectionChanged: ((Boolean) -> Unit)? = null
-    var onChatMessageReceived: ((ChatMessage) -> Unit)? = null // Receive a new message
-    var onDeleteMessage: ((Long) -> Unit)? = null              // Receive a delete by timestamp
+    var onChatMessageReceived: ((ChatMessage) -> Unit)? = null
+    var onDeleteMessage: ((Long) -> Unit)? = null
     // Fires with true when a reconnect cooldown starts (user should be told to wait),
     // and with false when the cooldown ends and a new connection attempt is allowed.
     var onCooldownChanged: ((Boolean) -> Unit)? = null
@@ -44,10 +43,6 @@ class ConnectionManager {
     // ── Connection ───────────────────────────────────────────────────────────────
 
     fun connect(ip: String) {
-        // ── Duplicate-connect guard ────────────────────────────────────────────
-        // Prevents a second connect() call (duplicate QR scan, two parallel
-        // Auto-Discover results, or Auto-Discover firing while a QR connection
-        // is already live) from killing an in-progress or established connection.
         if (isConnected) return
         if (!isConnecting.compareAndSet(false, true)) {
             // Blocked — cooldown is still active. Notify UI so it can show a toast.
@@ -80,9 +75,6 @@ class ConnectionManager {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-//        isConnected = false
-////        isConnecting.set(false)
-//        onConnectionChanged?.invoke(false)
 
         // ── Reconnect cooldown ────────────────────────────────────────────────────
 
@@ -250,12 +242,6 @@ class ConnectionManager {
             }
         }
     }
-//            webSocketClient?.connect()
-//        } catch (e: Exception) {
-//            e.printStackTrace()
-//            onConnectionChanged?.invoke(false)
-//        }
-//    }
 
     // ── Incoming message handling ────────────────────────────────────────────────
 
@@ -353,7 +339,7 @@ class ConnectionManager {
     private fun buildHttpClient(): OkHttpClient {
         val trustManager = CertStore.buildPinnedTrustManager()
             ?: CertStore.buildTrustAllTrustManager()
-        val sslContext   = CertStore.buildPinnedSSLContext()
+        val sslContext = CertStore.buildPinnedSSLContext()
             ?: CertStore.buildTrustAllSSLContext()
 
         return OkHttpClient.Builder()
@@ -375,7 +361,7 @@ class ConnectionManager {
         if (!path.startsWith("/files/")) return null
         return try {
             // Using URI to encode Hebrew and spaces legally
-            // המבנה: scheme, authority (host:port), path, query, fragment
+            // The structure: scheme, authority (host:port), path, query, fragment
             val uri = URI("https", null, phoneIP, 8080, path, null, null)
             val url = uri.toASCIIString() // This turns "Settings" into %D7%94
 
@@ -489,11 +475,11 @@ class ConnectionManager {
 
     companion object {
         /**
-         * Returns the real Windows computer name (e.g. "DESKTOP-025G0LF").
+         * Returns the real Windows computer name.
          * Priority order:
          *   1. COMPUTERNAME env var  — set directly by Windows, always correct
          *   2. InetAddress.localHost — works on most machines but can fail
-         *   3. "StreamBridge-Windows"                  — last-resort fallback
+         *   3. "StreamBridge-Windows" — last-resort fallback
          */
         fun getComputerName(): String =
             System.getenv("COMPUTERNAME")?.takeIf { it.isNotBlank() }

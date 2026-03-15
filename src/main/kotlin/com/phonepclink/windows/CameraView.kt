@@ -61,7 +61,6 @@ class CameraView(private val connectionManager: ConnectionManager) {
         val root = BorderPane()
         root.style = "-fx-background-color: #FFFFFF;"
 
-        // TOP - Control buttons (moved here for better visibility on small screens)
         val controlBox = HBox(10.0)
         controlBox.alignment = Pos.CENTER_LEFT
         controlBox.padding = Insets(10.0)
@@ -194,7 +193,7 @@ class CameraView(private val connectionManager: ConnectionManager) {
 
                     Platform.runLater {
                         // Update status with success message
-                        statusLabel.text = "✅ Photo saved successfully!"
+                        statusLabel.text = "Photo saved successfully!"
                         statusLabel.style = "-fx-text-fill: #008000; -fx-font-weight: bold; -fx-font-size: 14px;"
 
                         // Show popup dialog

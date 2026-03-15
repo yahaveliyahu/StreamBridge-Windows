@@ -9,14 +9,8 @@ import javafx.scene.transform.Scale
  * Utility object that converts the Android vector drawables (24×24 viewport)
  * directly into JavaFX nodes. The SVG path data is identical between the two
  * platforms — only the wrapper format differs.
- *
- * Usage:
- *   AppIcons.send(size = 20.0, color = Color.web("#0078D7"))
- *   AppIcons.image(size = 24.0)       // defaults to black
  */
 object AppIcons {
-
-    // ── Raw path data (copied verbatim from ic_*.xml) ─────────────────────────
 
     private const val PATH_CAMERA =
         "M20,5h-3.17l-1.84-2H9.01L7.17,5H4c-1.1,0-2,0.9-2,2v11c0,1.1,0.9,2,2,2h16" +
@@ -34,9 +28,6 @@ object AppIcons {
         "M14,2H6c-1.1,0 -2,0.9 -2,2v16c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V8z " +
                 "M14,2v6h6"
 
-    private const val PATH_FOLDER =
-        "M10,4l2,2h8c1.1,0 2,0.9 2,2v10c0,1.1 -0.9,2 -2,2H4c-1.1,0 -2,-0.9 -2,-2V6c0,-1.1 0.9,-2 2,-2h6z"
-
     private const val PATH_IMAGE =
         "M21,19V5c0,-1.1 -0.9,-2 -2,-2H5c-1.1,0 -2,0.9 -2,2v14c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2z" +
                 "M8.5,13.5l2.5,3.01L14.5,12l4.5,6H5l3.5,-4.5z"
@@ -49,6 +40,13 @@ object AppIcons {
                 "M7,7h10v2H7z" +
                 "M7,11h10v2H7z" +
                 "M7,15h7v2H7z"
+
+    private const val PATH_QR =
+        "M3,3h8v8H3z M5,5v4h4V5z " +
+                "M13,3h8v8h-8z M15,5v4h4V5z " +
+                "M3,13h8v8H3z M5,15v4h4v-4z " +
+                "M13,13h2v2h-2z M17,13h2v2h-2z M15,15h2v2h-2z M19,15h2v2h-2z " +
+                "M13,19h2v2h-2z M17,17h2v2h-2z M19,19h2v2h-2z"
 
     private const val PATH_SEND =
         "M2,21l21,-9L2,3v7l15,2 -15,2z"
@@ -96,10 +94,10 @@ object AppIcons {
     fun camera  (size: Double = 20.0, color: Color = Color.BLACK) = make(PATH_CAMERA,   size, color)
     fun contacts(size: Double = 20.0, color: Color = Color.BLACK) = make(PATH_CONTACTS, size, color)
     fun file    (size: Double = 20.0, color: Color = Color.BLACK) = make(PATH_FILE,     size, color)
-    fun folder  (size: Double = 20.0, color: Color = Color.BLACK) = make(PATH_FOLDER,   size, color)
     fun image   (size: Double = 20.0, color: Color = Color.BLACK) = make(PATH_IMAGE,    size, color)
     fun music   (size: Double = 20.0, color: Color = Color.BLACK) = make(PATH_MUSIC,    size, color)
     fun notes   (size: Double = 20.0, color: Color = Color.BLACK) = make(PATH_NOTES,    size, color)
+    fun qr      (size: Double = 20.0, color: Color = Color.BLACK) = make(PATH_QR,       size, color)
     fun send    (size: Double = 20.0, color: Color = Color.BLACK) = make(PATH_SEND,     size, color)
     fun video   (size: Double = 20.0, color: Color = Color.BLACK) = make(PATH_VIDEO,    size, color)
 }

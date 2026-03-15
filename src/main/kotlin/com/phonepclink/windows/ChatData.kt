@@ -9,22 +9,6 @@ import java.util.*
 // Types of messages
 enum class MessageType { TEXT, IMAGE, VIDEO, AUDIO, FILE }
 
-// מבנה קובץ (לשימוש ברשימות קבצים אם צריך, מונע שגיאות בקבצים אחרים)
-//data class FileItem(
-//    val name: String,
-//    val path: String,
-//    val size: Long,
-//    val type: String
-//) {
-//    val sizeStr: String
-//        get() = when {
-//            size < 1024 -> "$size B"
-//            size < 1024 * 1024 -> "${size / 1024} KB"
-//            size < 1024 * 1024 * 1024 -> "${size / (1024 * 1024)} MB"
-//            else -> String.format("%.2f GB", size / (1024.0 * 1024 * 1024))
-//        }
-//}
-
 // Message structure
 data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
@@ -124,7 +108,7 @@ class HistoryManager {
 
     // Manual cleanup method - can be called periodically
     fun cleanOldMessages() {
-        val history = loadHistory() // This already filters old messages
+        val history = loadHistory()
 
         // Rewrite the file with only recent messages
         val jsonArray = JSONArray()
