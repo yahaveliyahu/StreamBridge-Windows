@@ -9,9 +9,9 @@ The desktop application connects to the Android server, receives live camera str
 
 ## 📸 Screenshots
 
-| Main Window | Live Camera | Chat |
-|---|---|---|
-| <img src="screenshots/main.jpg" width="260"> | <img src="screenshots/camera.jpg" width="260"> | <img src="screenshots/chat.jpg" width="260"> |
+| Chat Screen | Live Camera Screen |
+|---|---|
+| <img src="screenshots/chat_client.jpg" width="260"> | <img src="screenshots/live_camera_client.jpg" width="260"> |
 
 ---
 
