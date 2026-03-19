@@ -26,7 +26,7 @@ The desktop application connects to the Android server, receives live camera str
 
 ## Watch the App in Action
 
-▶️ **Demo video:** [Click here to watch the video] (https://youtu.be/TWyCvso4Wcw)
+▶️ **Demo video:** [Click here to watch the video] (https://youtu.be/MikiPHmphYk)
 
 ---
 
