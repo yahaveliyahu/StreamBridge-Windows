@@ -7,14 +7,6 @@ The desktop application connects to the Android server, receives live camera str
 
 ---
 
-## 📸 Screenshots
-
-| Chat Screen | Live Camera Screen |
-|---|---|
-| <img src="screenshots/chat_client.jpg" width="1000"> | <img src="screenshots/live_camera_client.jpg" width="1000"> |
-
----
-
 ## Features
 
 - 📷 **Live camera streaming** from the phone to the PC
@@ -29,6 +21,12 @@ The desktop application connects to the Android server, receives live camera str
   - ECDSA authentication
   - AES-256-GCM encryption
 - 🤝 **Secure first-time pairing (TOFU – Trust On First Use)**
+
+ ---
+
+## Watch the App in Action
+
+▶️ **Demo video:** [Click here to watch the video] (https://youtu.be/TWyCvso4Wcw)
 
 ---
 
@@ -179,6 +177,14 @@ src/
 │ │ │
 │ │ ├── security/
       └── CertStore.kt 
+
+---
+
+## 📸 Screenshots
+
+| Chat Screen | Live Camera Screen |
+|---|---|
+| <img src="screenshots/chat_client.jpg" width="1000"> | <img src="screenshots/live_camera_client.jpg" width="1000"> |
 
 ---
 
