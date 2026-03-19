@@ -9,6 +9,7 @@ import javafx.scene.layout.*
 import javafx.stage.Stage
 import javafx.scene.image.ImageView
 import kotlinx.coroutines.launch
+import javafx.scene.image.Image
 
 
 class MainApp : Application() {
@@ -28,6 +29,11 @@ class MainApp : Application() {
 
     override fun start(primaryStage: Stage) {
         primaryStage.title = "StreamBridge"
+
+        val iconStream = javaClass.getResourceAsStream("/StreamBridge.png")
+        if (iconStream != null) {
+            primaryStage.icons.add(Image(iconStream))
+        }
 
         connectionManager = ConnectionManager()
         discoveryManager = DiscoveryManager()
