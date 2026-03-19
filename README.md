@@ -7,9 +7,11 @@ The desktop application connects to the Android server, receives live camera str
 
 ---
 
-## Watch the App in Action
+## 📸 Screenshots
 
-▶️ **Demo video:** *(add soon)*
+| Main Window | Live Camera | Chat |
+|---|---|---|
+| <img src="screenshots/main.jpg" width="260"> | <img src="screenshots/camera.jpg" width="260"> | <img src="screenshots/chat.jpg" width="260"> |
 
 ---
 
@@ -177,14 +179,6 @@ src/
 │ │ │
 │ │ ├── security/
       └── CertStore.kt 
-
----
-
-## 📸 Screenshots
-
-| Main Window | Live Camera | Chat |
-|---|---|---|
-| <img src="screenshots/main.jpg" width="260"> | <img src="screenshots/camera.jpg" width="260"> | <img src="screenshots/chat.jpg" width="260"> |
 
 ---
 
