@@ -11,7 +11,7 @@ The desktop application connects to the Android server, receives live camera str
 
 | Chat Screen | Live Camera Screen |
 |---|---|
-| <img src="screenshots/chat_client.jpg" width="600"> | <img src="screenshots/live_camera_client.jpg" width="600"> |
+| <img src="screenshots/chat_client.jpg" width="800"> | <img src="screenshots/live_camera_client.jpg" width="800"> |
 
 ---
 
